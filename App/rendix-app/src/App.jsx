@@ -1,7 +1,8 @@
 /*
   Nombre del archivo: App.jsx
   Propósito: Componente principal de Rendix Cloud. Administra la sesión, 
-  operaciones CRUD con Supabase, notificaciones estéticas, Guantera Digital y Registro de Mantenciones.
+  operaciones CRUD con Supabase, notificaciones estéticas, Guantera Digital, 
+  Registro de Mantenciones, fotos de vehículos y Analítica.
 */
 
 import React, { useState, useEffect } from 'react';
@@ -23,7 +24,8 @@ import DocumentsView from './views/DocumentsView';
 import VehicleModal from './modals/VehicleModal';
 import FuelModal from './modals/FuelModal';
 import ExpenseModal from './modals/ExpenseModal';
-import ServiceModal from './modals/ServiceModal'; // <-- Nuevo modal de mantención importado
+import ServiceModal from './modals/ServiceModal';
+import AnalyticsModal from './modals/AnalyticsModal';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -71,7 +73,6 @@ export default function App() {
     }
   }, [session]);
 
-  // Consultar vehículos del usuario activo incluyendo patente, mantención y documentos legales
   const fetchUserVehicles = async () => {
     const { data, error } = await supabase
       .from('user_vehicles')
@@ -88,9 +89,9 @@ export default function App() {
         color: v.color || '#4f46e5',
         currentKm: Number(v.current_km || 0),
         plate: v.plate || 'SIN PATENTE',
+        image_url: v.image_url || '', // Imagen / Foto del vehículo
         last_service_km: Number(v.last_service_km || 0),
         last_service_date: v.last_service_date || '',
-        // Fechas de la Guantera Digital recuperadas desde Supabase
         soap_expiration: v.soap_expiration || '',
         permiso_circulacion_expiration: v.permiso_circulacion_expiration || '',
         revision_tecnica_expiration: v.revision_tecnica_expiration || '',
@@ -123,25 +124,7 @@ export default function App() {
     setModalState({ type, data });
   };
 
-  // ----------------------------------------------------
-  // MANEJADORES DE BASE DE DATOS (CRUD)
-  // ----------------------------------------------------
-
-  const handleDeleteFuel = async (fuelId) => {
-    if (window.confirm('¿Estás seguro de eliminar este registro de carga de combustible?')) {
-      const { error } = await supabase
-        .from('fuel_records')
-        .delete()
-        .eq('id', fuelId);
-
-      if (!error) {
-        fetchFuelRecords(); // Vuelve a consultar la tabla para actualizar la vista
-        showToast('🗑️ Carga de combustible eliminada correctamente');
-      } else {
-        showToast('❌ Error al eliminar la carga de combustible');
-      }
-    }
-  };
+  // CRUD Manejadores
   const handleVehicleSubmit = async (form) => {
     if (!session) return;
     const payload = {
@@ -152,7 +135,8 @@ export default function App() {
       model: form.model,
       year: Number(form.year),
       current_km: Number(form.currentKm),
-      plate: form.plate ? form.plate.trim().toUpperCase() : 'SIN PATENTE'
+      plate: form.plate ? form.plate.trim().toUpperCase() : 'SIN PATENTE',
+      image_url: form.image_url || null // Guardar la URL de la foto
     };
     if (form.id) {
       const { error } = await supabase.from('user_vehicles').update(payload).eq('id', form.id);
@@ -179,7 +163,6 @@ export default function App() {
     }
   };
 
-  // Registrar fecha y kilómetros de mantención en Supabase
   const handleServiceSubmit = async (form) => {
     if (!session) return;
     const { error } = await supabase
@@ -199,9 +182,9 @@ export default function App() {
     }
   };
 
-  // Guardar fechas de la Guantera Digital en Supabase de forma persistente
-  const handleSaveDocuments = async (vehicleId, updatedDocs) => {
+const handleSaveDocuments = async (vehicleId, updatedDocs) => {
     if (!session) return;
+    
     const { error } = await supabase
       .from('user_vehicles')
       .update(updatedDocs)
@@ -209,75 +192,95 @@ export default function App() {
 
     if (!error) {
       fetchUserVehicles();
-      showToast('💾 Documentos de la Guantera Digital guardados con éxito');
+      showToast('💾 Documentos guardados con éxito');
     } else {
-      showToast('❌ Error al guardar los documentos en la base de datos');
+      console.error('Error al guardar en Supabase:', error);
+      showToast(`❌ Error: ${error.message || 'No se pudo guardar'}`);
     }
   };
 
-  const handleFuelSubmit = async (form) => {
-    if (!session) return;
-    const payload = {
-      user_id: session.user.id,
-      vehicle_id: form.vehicleId,
-      date: form.date,
-      odometer: Number(form.odometer),
-      liters: Number(form.liters),
-      total: Number(form.total)
-    };
-    const { error } = await supabase.from('fuel_records').insert([payload]);
-    if (!error) {
-      fetchFuelRecords();
-      closeModal();
-      showToast('⛽ Carga de combustible registrada con éxito');
-    } else showToast('❌ Error al registrar la carga');
-  };
-
-  const handleExpenseSubmit = async (form) => {
-    if (!session) return;
-    const payload = {
-      user_id: session.user.id,
-      vehicle_id: form.vehicleId,
-      date: form.date,
-      category: form.category,
-      description: form.description,
-      amount: Number(form.amount)
-    };
-    const { error } = await supabase.from('expenses').insert([payload]);
-    if (!error) {
-      fetchExpenses();
-      closeModal();
-      showToast('💸 Gasto operativo registrado con éxito');
-    } else showToast('❌ Error al registrar el gasto');
-  };
-
-  const handleRefreshCne = async () => {
+ const handleRefreshCne = async () => {
     setIsCneLoading(true);
-    showToast('🔄 Sincronizando precios con la Red CNE...');
+    showToast('🔄 Consultando Red CNE vía Supabase Edge...');
+
     try {
-      const response = await fetch('https://www.bencinaenlinea.cl/api/v1/estaciones');
-      if (!response.ok) throw new Error('Error de conexión');
-      const data = await response.json();
-      const formatted = data.map((item, index) => ({
-        id: item.id || index,
-        name: item.nombre_fantasia || item.razon_social || 'Estación de Servicio',
-        commune: item.nombre_comuna || item.comuna || 'Santiago',
-        p93: Number(item.precios?.['93'] || item.p93 || 1280),
-        p95: Number(item.precios?.['95'] || item.p95 || 1325),
-        p97: Number(item.precios?.['97'] || item.p97 || 1370),
-        diesel: Number(item.precios?.['diesel'] || item.diesel || 1040)
-      }));
+      const { data, error } = await supabase.functions.invoke('quick-processor');
+
+      if (error) {
+        throw new Error(error.message || 'Error al conectar con Supabase Edge');
+      }
+
+      // Si la función devuelve un error controlado de la CNE
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      const rawList = Array.isArray(data) ? data : (data?.estaciones || data?.data || []);
+
+      if (rawList.length === 0) {
+        throw new Error('La API de CNE no entregó datos de estaciones.');
+      }
+
+      // Mapeo oficial unificando Asistido y Autoservicio
+      const formatted = rawList.map((item, index) => {
+        const prices = item.precios || item.precios_combustible || {};
+
+        const getMinPrice = (...keys) => {
+          const valid = keys
+            .map(k => Number(prices[k] || item[k] || 0))
+            .filter(p => !isNaN(p) && p > 0);
+          return valid.length > 0 ? Math.min(...valid) : 0;
+        };
+
+        return {
+          id: item.id || item.codigo_estacion || index,
+          name: item.nombre_fantasia || item.razon_social || item.distribuidor || 'Estación de Servicio',
+          brand: item.distribuidor || item.marca || 'Generica',
+          address: item.direccion || 'Sin dirección',
+          commune: item.nombre_comuna || item.comuna || 'Otra Comuna',
+          region: item.nombre_region || item.region || 'Otra Región',
+          p93: getMinPrice('1', '8', '93', 'p93', 'A93', 'precio_93'),
+          p95: getMinPrice('7', '9', '95', 'p95', 'A95', 'precio_95'),
+          p97: getMinPrice('2', '10', '97', 'p97', 'A97', 'precio_97'),
+          diesel: getMinPrice('3', '11', 'DI', 'ADI', 'diesel', 'precio_diesel'),
+          kerosene: getMinPrice('4', '12', 'KE', 'AKE', 'kerosene', 'precio_kerosene')
+        };
+      }).filter(s => s.p93 > 0 || s.p95 > 0 || s.p97 > 0 || s.diesel > 0 || s.kerosene > 0);
+
       setCneStations(formatted);
-      showToast('⚡ Precios de bencina actualizados en tiempo real');
-    } catch {
-      showToast('✅ Red CNE sincronizada correctamente');
+      showToast(`⚡ ${formatted.length.toLocaleString('es-CL')} estaciones sincronizadas en vivo`);
+
+    } catch (err) {
+      console.error('Error CNE:', err);
+      showToast(`❌ ${err.message || 'Error de conexión con la CNE'}`);
     } finally {
       setIsCneLoading(false);
     }
   };
 
-  // Contador de Alertas dinámico (Mecánica + Documentos Legales)
-  const getAlertCount = () => {
+const handleDeleteFuel = async (id) => {
+    try {
+      // 1. Eliminar de Supabase
+      const { error } = await supabase
+        .from('fuel_logs') // Ajusta el nombre de la tabla si en tu BD se llama 'fuels' o similar
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // 2. Actualizar estado local (ajusta setFuels según el nombre de tu estado, ej: setFuelRecords)
+      setFuels(prev => prev.filter(item => item.id !== id));
+      showToast('🗑️ Carga de bencina eliminada');
+
+    } catch (err) {
+      console.error('Error al eliminar carga:', err);
+      showToast('❌ Error al eliminar la carga de bencina');
+    }
+  };
+  
+
+
+const getAlertCount = () => {
     let count = 0;
     vehicles.forEach(v => {
       const currentKm = Number(v.currentKm || 0);
@@ -296,7 +299,6 @@ export default function App() {
     return count;
   };
 
-  // Filtrado para Dashboard
   const filteredFuels = dashVehicleFilter === 'all' ? fuelRecords : fuelRecords.filter(f => (f.vehicle_id || f.vehicleId) === dashVehicleFilter);
   const filteredExpenses = dashVehicleFilter === 'all' ? expenses : expenses.filter(e => (e.vehicle_id || e.vehicleId) === dashVehicleFilter);
   const totalFuelCost = filteredFuels.reduce((acc, curr) => acc + Number(curr.total || 0), 0);
@@ -361,6 +363,7 @@ export default function App() {
             dashVehicleFilter={dashVehicleFilter}
             setDashVehicleFilter={setDashVehicleFilter}
             setActiveTab={setActiveTab}
+            openAnalyticsModal={() => openModal('analytics')}
           />
         )}
         {activeTab === 'vehicles' && (
@@ -370,13 +373,13 @@ export default function App() {
           <DocumentsView vehicles={vehicles} onSaveDocuments={handleSaveDocuments} />
         )}
         {activeTab === 'fuel' && (
-  <FuelView 
-    fuelRecords={fuelRecords} 
-    vehicles={vehicles} 
-    openModal={() => openModal('fuel')} 
-    onDeleteFuel={handleDeleteFuel} // <-- Añade esta prop aquí
-  />
-)}
+          <FuelView 
+            fuelRecords={fuelRecords} 
+            vehicles={vehicles} 
+            openModal={() => openModal('fuel')} 
+            onDeleteFuel={handleDeleteFuel} 
+          />
+        )}
         {activeTab === 'expenses' && (
           <ExpensesView expenses={expenses} vehicles={vehicles} openModal={() => openModal('expense')} />
         )}
@@ -396,7 +399,7 @@ export default function App() {
       {modalState.type === 'fuel' && <FuelModal vehicles={vehicles} onClose={closeModal} onSubmit={handleFuelSubmit} />}
       {modalState.type === 'expense' && <ExpenseModal vehicles={vehicles} onClose={closeModal} onSubmit={handleExpenseSubmit} />}
       {modalState.type === 'service' && <ServiceModal vehicle={modalState.data} onClose={closeModal} onSubmit={handleServiceSubmit} />}
-    
+      {modalState.type === 'analytics' && <AnalyticsModal fuelRecords={fuelRecords} expenses={expenses} onClose={closeModal} />}
     </div>
   );
 }

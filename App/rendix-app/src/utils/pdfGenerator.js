@@ -1,7 +1,7 @@
 /*
   Nombre del archivo: pdfGenerator.js
-  Propósito: Función utilitaria independiente para generar y exportar el 
-  Reporte Ejecutivo Integral de Rendix en formato PDF.
+  Propósito: Función utilitaria para generar el Reporte Ejecutivo en PDF 
+  incluyendo miniaturas de imagen para cada vehículo de la flota.
 */
 
 export const generatePdfReport = ({ vehicles = [], totalFuelCost = 0, totalExpenses = 0, indicators = { uf: 41226.39, dolar: 994.29 } }) => {
@@ -10,19 +10,24 @@ export const generatePdfReport = ({ vehicles = [], totalFuelCost = 0, totalExpen
   const totalInUf = indicators.uf > 0 ? (totalGeneral / indicators.uf).toFixed(2) : '0.00';
   const totalInUsd = indicators.dolar > 0 ? (totalGeneral / indicators.dolar).toFixed(2) : '0.00';
 
-  // Filas del inventario y mantenciones
   let vehiclesRowsHtml = vehicles.map(v => {
     const lastServiceText = v.last_service_date && v.last_service_km > 0 
       ? `${v.last_service_date} (${Number(v.last_service_km).toLocaleString('es-CL')} km)` 
       : 'Sin registro';
 
+    const imgTag = v.image_url 
+      ? `<img src="${v.image_url}" style="width: 32px; height: 32px; border-radius: 4px; object-fit: cover; vertical-align: middle; margin-right: 8px;" />` 
+      : `<span style="font-size: 16px; margin-right: 8px;">🚗</span>`;
+
     return `
       <tr>
-        <td style="padding: 12px; border-bottom: 1px solid #cbd5e1; font-weight: bold;">${v.name || 'N/A'}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #cbd5e1;">${v.brand || 'N/A'} ${v.model || ''} (${v.year || ''})</td>
-        <td style="padding: 12px; border-bottom: 1px solid #cbd5e1;">${v.plate || 'Sin Patente'}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #cbd5e1; text-align: right;">${Number(v.currentKm || 0).toLocaleString('es-CL')} km</td>
-        <td style="padding: 12px; border-bottom: 1px solid #cbd5e1; font-size: 12px; color: #475569;">${lastServiceText}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #cbd5e1; font-weight: bold; display: flex; align-items: center;">
+          ${imgTag} ${v.name || 'N/A'}
+        </td>
+        <td style="padding: 10px; border-bottom: 1px solid #cbd5e1;">${v.brand || 'N/A'} ${v.model || ''} (${v.year || ''})</td>
+        <td style="padding: 10px; border-bottom: 1px solid #cbd5e1; font-weight: bold; color: #0284c7;">${v.plate || 'Sin Patente'}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #cbd5e1; text-align: right;">${Number(v.currentKm || 0).toLocaleString('es-CL')} km</td>
+        <td style="padding: 10px; border-bottom: 1px solid #cbd5e1; font-size: 12px; color: #475569;">${lastServiceText}</td>
       </tr>
     `;
   }).join('');
@@ -31,10 +36,13 @@ export const generatePdfReport = ({ vehicles = [], totalFuelCost = 0, totalExpen
     vehiclesRowsHtml = `<tr><td colspan="5" style="padding: 20px; text-align: center; color: #64748b;">No hay vehículos registrados en la flota.</td></tr>`;
   }
 
-  // Filas de la Guantera Digital (Documentos Legales)
   let documentsRowsHtml = vehicles.map(v => {
     return `
-      <tr style="background: #f1f5f9;"><td colspan="5" style="padding: 8px 12px; font-weight: bold; color: #1e293b;">Vehículo: ${v.name} (${v.plate || 'Sin Patente'})</td></tr>
+      <tr style="background: #f1f5f9;">
+        <td colspan="5" style="padding: 8px 12px; font-weight: bold; color: #1e293b;">
+          Vehículo: ${v.name} (${v.plate || 'Sin Patente'})
+        </td>
+      </tr>
       <tr>
         <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0;">Revisión Técnica: <strong>${v.revision_tecnica_expiration || 'No configurada'}</strong></td>
         <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0;" colspan="2">Permiso de Circulación: <strong>${v.permiso_circulacion_expiration || 'No configurada'}</strong></td>

@@ -1,173 +1,130 @@
 /*
   Nombre del archivo: DocumentsView.jsx
-  Propósito: "Guantera Digital" con sistema de navegación por pestañas (tabs) 
-  para gestionar las fechas de vencimiento de cada vehículo.
+  Propósito: Vista Guantera Digital para administrar fechas límite de documentos por vehículo.
+  Saneamiento de texto vacío a null para evitar HTTP 400 en Postgres/Supabase.
 */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 export default function DocumentsView({ vehicles = [], onSaveDocuments }) {
-  const [editStates, setEditStates] = useState({});
-  const [activeVehicleId, setActiveVehicleId] = useState(null);
+  const [docForms, setDocForms] = useState({});
 
-  // Seleccionar automáticamente el primer vehículo al cargar
-  useEffect(() => {
-    if (vehicles.length > 0 && !activeVehicleId) {
-      setActiveVehicleId(vehicles[0].id);
-    }
-  }, [vehicles, activeVehicleId]);
-
-  const getPRTMonth = (plate) => {
-    if (!plate || plate === 'SIN PATENTE') return 'No calculado';
-    const numbers = plate.match(/\d/g);
-    if (!numbers) return 'No calculado';
-    
-    const prtMonths = {
-      '0': 'Febrero', '1': 'Abril', '2': 'Mayo', '3': 'Junio',
-      '4': 'Julio', '5': 'Agosto', '6': 'Septiembre', '7': 'Octubre',
-      '8': 'Noviembre', '9': 'Enero'
-    };
-    return prtMonths[numbers[numbers.length - 1]] || 'No calculado';
+  const handleDateChange = (vehicleId, field, value) => {
+    setDocForms(prev => ({
+      ...prev,
+      [vehicleId]: {
+        ...(prev[vehicleId] || {}),
+        [field]: value
+      }
+    }));
   };
 
-  const getDocumentStatus = (expirationDate) => {
-    if (!expirationDate) return { text: 'Sin configurar', color: '#94a3b8', bg: '#1e293b', border: '#334155' };
-    const diffDays = Math.ceil((new Date(expirationDate) - new Date()) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return { text: 'Vencido', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.3)' };
-    if (diffDays <= 30) return { text: `Vence en ${diffDays} días`, color: '#eab308', bg: 'rgba(234, 179, 8, 0.15)', border: 'rgba(234, 179, 8, 0.3)' };
-    return { text: 'Al día', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.3)' };
-  };
-
-  const handleDateChange = (vehicleId, docField, value) => {
-    setEditStates(prev => ({ ...prev, [vehicleId]: { ...prev[vehicleId], [docField]: value } }));
+  // Convierte cadenas vacías ("") a null para que Supabase las acepte en campos DATE
+  const cleanDate = (val) => {
+    if (!val || typeof val !== 'string' || val.trim() === '') return null;
+    return val;
   };
 
   const handleSave = (vehicle) => {
-    const updatedDocs = editStates[vehicle.id] || {};
-    if (onSaveDocuments && Object.keys(updatedDocs).length > 0) {
-      onSaveDocuments(vehicle.id, updatedDocs);
-    }
+    const currentData = docForms[vehicle.id] || {};
+
+    const rawSoap = currentData.soap_expiration !== undefined ? currentData.soap_expiration : vehicle.soap_expiration;
+    const rawPermiso = currentData.permiso_circulacion_expiration !== undefined ? currentData.permiso_circulacion_expiration : vehicle.permiso_circulacion_expiration;
+    const rawRevision = currentData.revision_tecnica_expiration !== undefined ? currentData.revision_tecnica_expiration : vehicle.revision_tecnica_expiration;
+    const rawSeguro = currentData.seguro_privado_expiration !== undefined ? currentData.seguro_privado_expiration : vehicle.seguro_privado_expiration;
+    const rawLicencia = currentData.licencia_conducir_expiration !== undefined ? currentData.licencia_conducir_expiration : vehicle.licencia_conducir_expiration;
+
+    const payload = {
+      soap_expiration: cleanDate(rawSoap),
+      permiso_circulacion_expiration: cleanDate(rawPermiso),
+      revision_tecnica_expiration: cleanDate(rawRevision),
+      seguro_privado_expiration: cleanDate(rawSeguro),
+      licencia_conducir_expiration: cleanDate(rawLicencia)
+    };
+
+    onSaveDocuments(vehicle.id, payload);
   };
 
-  const documentTypes = [
-    { key: 'revision_tecnica_expiration', label: 'Revisión Técnica', icon: '🔍' },
-    { key: 'permiso_circulacion_expiration', label: 'Permiso de Circulación', icon: '📄' },
-    { key: 'soap_expiration', label: 'Seguro Obligatorio (SOAP)', icon: '🏥' },
-    { key: 'seguro_privado_expiration', label: 'Seguro Automotriz Privado', icon: '🛡️' },
-    { key: 'licencia_conducir_expiration', label: 'Licencia de Conducir', icon: '🪪' }
-  ];
-
-  const activeVehicle = vehicles.find(v => v.id === activeVehicleId);
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
-      
-      {/* Encabezado */}
-      <div style={{ borderBottom: '1px solid #334155', paddingBottom: '16px' }}>
-        <h2 style={{ margin: 0, fontSize: '26px', color: '#f8fafc', fontWeight: '800' }}>🗂️ Guantera Digital</h2>
-        <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '14px' }}>Control de vencimientos por vehículo. El mes de PRT es autocalculado.</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1200px', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' }}>
+      <div style={{ borderBottom: '1px solid #334155', paddingBottom: '20px' }}>
+        <h2 style={{ margin: 0, fontSize: '28px', color: '#f8fafc', fontWeight: '900', letterSpacing: '-0.5px' }}>📁 Guantera Digital</h2>
+        <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '14px' }}>Configura los vencimientos legales para recibir alertas preventivas oportunas.</p>
       </div>
 
-      {vehicles.length === 0 ? (
-        <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-          No hay vehículos registrados para gestionar documentos.
-        </div>
-      ) : (
-        <>
-          {/* Navegación por Pestañas (Tabs) */}
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px' }}>
-            {vehicles.map(v => (
-              <button
-                key={v.id}
-                onClick={() => setActiveVehicleId(v.id)}
-                style={{
-                  background: activeVehicleId === v.id ? '#3b82f6' : '#1e293b',
-                  color: activeVehicleId === v.id ? '#ffffff' : '#94a3b8',
-                  border: activeVehicleId === v.id ? 'none' : '1px solid #334155',
-                  padding: '10px 20px',
-                  borderRadius: '10px',
-                  fontSize: '14px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.2s ease',
-                  boxShadow: activeVehicleId === v.id ? '0 4px 6px -1px rgba(59, 130, 246, 0.3)' : 'none'
-                }}
-              >
-                {v.name} ({v.plate || 'Sin Patente'})
-              </button>
-            ))}
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
+        {vehicles.map(v => {
+          const formData = docForms[v.id] || {};
 
-          {/* Contenido de la Pestaña Activa */}
-          {activeVehicle && (
-            <div style={{
-              background: '#1e293b', border: '1px solid #334155', borderRadius: '16px',
-              padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px',
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-                <div>
-                  <h3 style={{ margin: '0 0 4px 0', fontSize: '22px', color: '#f8fafc', fontWeight: '800' }}>
-                    Documentos de {activeVehicle.name}
-                  </h3>
-                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>
-                    PRT Estimada: <strong style={{ color: '#38bdf8' }}>{getPRTMonth(activeVehicle.plate)}</strong>
-                  </p>
+          return (
+            <div key={v.id} style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              
+              {/* Banner visual con foto del vehículo */}
+              <div style={{ position: 'relative', height: '110px', background: '#0f172a' }}>
+                {v.image_url ? (
+                  <img src={v.image_url} alt={v.name} onError={(e) => { e.target.style.display = 'none'; }} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', opacity: 0.5 }}>📁</div>
+                )}
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(to bottom, rgba(15,23,42,0.2) 0%, rgba(30,41,59,0.95) 100%)' }} />
+                <div style={{ position: 'absolute', bottom: '12px', left: '16px' }}>
+                  <h4 style={{ margin: 0, color: '#f8fafc', fontSize: '18px', fontWeight: '900' }}>{v.name}</h4>
+                  <span style={{ color: '#38bdf8', fontSize: '12px', fontWeight: '700' }}>{v.plate || 'Sin Patente'}</span>
                 </div>
+              </div>
+
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>REVISIÓN TÉCNICA (PRT)</label>
+                  <input
+                    type="date"
+                    value={formData.revision_tecnica_expiration !== undefined ? formData.revision_tecnica_expiration : (v.revision_tecnica_expiration || '')}
+                    onChange={(e) => handleDateChange(v.id, 'revision_tecnica_expiration', e.target.value)}
+                    style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px 10px', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>PERMISO DE CIRCULACIÓN</label>
+                  <input
+                    type="date"
+                    value={formData.permiso_circulacion_expiration !== undefined ? formData.permiso_circulacion_expiration : (v.permiso_circulacion_expiration || '')}
+                    onChange={(e) => handleDateChange(v.id, 'permiso_circulacion_expiration', e.target.value)}
+                    style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px 10px', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>SEGURO OBLIGATORIO (SOAP)</label>
+                  <input
+                    type="date"
+                    value={formData.soap_expiration !== undefined ? formData.soap_expiration : (v.soap_expiration || '')}
+                    onChange={(e) => handleDateChange(v.id, 'soap_expiration', e.target.value)}
+                    style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px 10px', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>SEGURO PRIVADO</label>
+                  <input
+                    type="date"
+                    value={formData.seguro_privado_expiration !== undefined ? formData.seguro_privado_expiration : (v.seguro_privado_expiration || '')}
+                    onChange={(e) => handleDateChange(v.id, 'seguro_privado_expiration', e.target.value)}
+                    style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px 10px', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                </div>
+
                 <button
-                  onClick={() => handleSave(activeVehicle)}
-                  style={{
-                    background: 'linear-gradient(135deg, #4f46e5, #4338ca)', color: '#ffffff',
-                    border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '13px',
-                    fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.3)'
-                  }}
+                  onClick={() => handleSave(v)}
+                  style={{ marginTop: '8px', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer' }}
                 >
-                  💾 Guardar Fechas
+                  💾 Guardar Cambios Guantera
                 </button>
               </div>
-
-              {/* Lista de Documentos */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {documentTypes.map(doc => {
-                  const currentEdits = editStates[activeVehicle.id] || {};
-                  const displayValue = currentEdits[doc.key] !== undefined ? currentEdits[doc.key] : (activeVehicle[doc.key] || '');
-                  const status = getDocumentStatus(displayValue);
-
-                  return (
-                    <div key={doc.key} style={{
-                      background: '#0f172a', border: `1px solid ${status.border}`, borderRadius: '10px',
-                      padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      gap: '16px', flexWrap: 'wrap'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                        <span style={{ fontSize: '24px' }}>{doc.icon}</span>
-                        <div>
-                          <div style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: '700' }}>{doc.label}</div>
-                          <div style={{ fontSize: '12px', color: status.color, fontWeight: '800', marginTop: '4px', padding: '2px 8px', background: status.bg, borderRadius: '4px', display: 'inline-block' }}>
-                            {status.text}
-                          </div>
-                        </div>
-                      </div>
-
-                      <input 
-                        type="date" 
-                        value={displayValue}
-                        onChange={(e) => handleDateChange(activeVehicle.id, doc.key, e.target.value)}
-                        style={{
-                          background: '#1e293b', border: '1px solid #334155', color: '#f8fafc',
-                          padding: '10px 14px', borderRadius: '8px', fontSize: '14px', fontWeight: '600',
-                          outline: 'none', cursor: 'pointer', colorScheme: 'dark'
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
             </div>
-          )}
-        </>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }
