@@ -1,37 +1,34 @@
-/*
-  Nombre del archivo: FuelModal.jsx
-  Propósito: Componente modal que provee el formulario para registrar una nueva carga 
-  de combustible asociada a un vehículo en Supabase, calculando el precio por litro en tiempo real.
-*/
-
 import React, { useState } from 'react';
 
 export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
-  const [form, setForm] = useState({ 
-    vehicleId: vehicles[0]?.id || '', 
-    date: new Date().toISOString().split('T')[0], 
-    odometer: '', 
-    liters: '', 
-    total: '' 
+  const [form, setForm] = useState({
+    vehicle_id: vehicles.length > 0 ? vehicles[0].id : '',
+    date: new Date().toISOString().split('T')[0],
+    odometer: vehicles.length > 0 ? (vehicles[0].currentKm || '') : '',
+    fuel_type: '95',
+    station: '',
+    liters: '',
+    total: ''
   });
 
-  const [loading, setLoading] = useState(false);
-
-  // Cálculo en tiempo real del costo por litro
-  const pricePerLiter = (form.total && form.liters && Number(form.liters) > 0)
-    ? (Number(form.total) / Number(form.liters)).toFixed(0)
-    : null;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.vehicleId) {
-      alert('Debes seleccionar o tener registrado al menos un vehículo.');
-      return;
-    }
-    setLoading(true);
-    await onSubmit(form);
-    setLoading(false);
+  const handleVehicleChange = (vId) => {
+    const selected = vehicles.find(v => v.id === vId);
+    setForm(prev => ({
+      ...prev,
+      vehicle_id: vId,
+      odometer: selected ? (selected.currentKm || '') : prev.odometer
+    }));
   };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.vehicle_id || !form.liters || !form.total) return;
+    onSubmit(form);
+  };
+
+  const litersNum = Number(form.liters || 0);
+  const totalNum = Number(form.total || 0);
+  const estimatedPricePerLiter = (litersNum > 0 && totalNum > 0) ? Math.round(totalNum / litersNum) : 0;
 
   return (
     <div style={{
@@ -40,183 +37,148 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'rgba(15, 23, 42, 0.75)',
-      backdropFilter: 'blur(4px)',
+      background: 'rgba(0,0,0,0.7)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000,
-      padding: '16px'
+      zIndex: 9999
     }}>
       <div style={{
         background: '#1e293b',
+        padding: '24px',
+        borderRadius: '12px',
+        width: '460px',
+        maxWidth: '90%',
         border: '1px solid #334155',
-        borderRadius: '16px',
-        width: '100%',
-        maxWidth: '440px',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-        color: '#f8fafc',
-        overflow: 'hidden'
+        color: '#fff'
       }}>
-        
-        {/* Cabecera del Modal */}
-        <div style={{
-          padding: '20px 24px',
-          borderBottom: '1px solid #334155',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>⛽</span> Registrar Carga de Bencina
-          </h2>
+          </h3>
           <button
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              fontSize: '20px',
-              cursor: 'pointer'
-            }}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '20px', cursor: 'pointer' }}
           >
             ✕
           </button>
         </div>
 
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          
-          {/* Vehículo */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={labelStyle}>Vehículo *</label>
-            {vehicles.length === 0 ? (
-              <p style={{ color: '#fca5a5', fontSize: '13px', margin: '4px 0 0 0' }}>
-                ⚠️ Primero debes agregar un vehículo en "Mis Vehículos".
-              </p>
-            ) : (
-              <select
-                required
-                value={form.vehicleId}
-                onChange={e => setForm({ ...form, vehicleId: e.target.value })}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                {vehicles.map(v => (
-                  <option key={v.id} value={v.id} style={{ background: '#1e293b' }}>
-                    {v.name} ({v.brand} {v.model})
-                  </option>
-                ))}
-              </select>
-            )}
+            <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Vehículo *</label>
+            <select
+              value={form.vehicle_id}
+              onChange={(e) => handleVehicleChange(e.target.value)}
+              required
+              style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+            >
+              {vehicles.map(v => (
+                <option key={v.id} value={v.id}>
+                  {v.name} ({v.plate})
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Fecha y Odómetro */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <label style={labelStyle}>Fecha *</label>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Fecha *</label>
               <input
-                required
                 type="date"
                 value={form.date}
-                onChange={e => setForm({ ...form, date: e.target.value })}
-                style={inputStyle}
+                onChange={(e) => setForm({ ...form, date: e.target.value })}
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
               />
             </div>
             <div>
-              <label style={labelStyle}>Odómetro (km) *</label>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Odómetro (km) *</label>
               <input
-                required
                 type="number"
-                min="0"
+                placeholder="ej: 12000"
                 value={form.odometer}
-                onChange={e => setForm({ ...form, odometer: e.target.value })}
-                placeholder="Ej: 45200"
-                style={inputStyle}
+                onChange={(e) => setForm({ ...form, odometer: e.target.value })}
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
               />
             </div>
           </div>
 
-          {/* Litros y Total ($) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <label style={labelStyle}>Litros *</label>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Tipo / Octanaje *</label>
+              <select
+                value={form.fuel_type}
+                onChange={(e) => setForm({ ...form, fuel_type: e.target.value })}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+              >
+                <option value="93">Gasolina 93</option>
+                <option value="95">Gasolina 95</option>
+                <option value="97">Gasolina 97</option>
+                <option value="diesel">Diésel</option>
+                <option value="kerosene">Kerosene</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Estación / Marca</label>
               <input
-                required
+                type="text"
+                placeholder="Ej: Copec, Shell, JLC"
+                value={form.station}
+                onChange={(e) => setForm({ ...form, station: e.target.value })}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Litros *</label>
+              <input
                 type="number"
                 step="0.01"
-                min="0.1"
+                placeholder="ej: 35.5"
                 value={form.liters}
-                onChange={e => setForm({ ...form, liters: e.target.value })}
-                placeholder="Ej: 35.5"
-                style={inputStyle}
+                onChange={(e) => setForm({ ...form, liters: e.target.value })}
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
               />
             </div>
             <div>
-              <label style={labelStyle}>Monto Total ($) *</label>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Monto Total ($) *</label>
               <input
-                required
                 type="number"
-                min="1"
+                placeholder="ej: 45000"
                 value={form.total}
-                onChange={e => setForm({ ...form, total: e.target.value })}
-                placeholder="Ej: 45000"
-                style={inputStyle}
+                onChange={(e) => setForm({ ...form, total: e.target.value })}
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
               />
             </div>
           </div>
 
-          {/* Indicador interactivo del precio por litro */}
-          {pricePerLiter && (
-            <div style={{
-              background: '#0f172a',
-              border: '1px solid #334155',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              color: '#38bdf8',
-              display: 'flex',
-              justify: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span>Precio estimado por litro:</span>
-              <strong>${Number(pricePerLiter).toLocaleString('es-CL')} / L</strong>
-            </div>
-          )}
+          <div style={{ background: '#0f172a', padding: '10px', borderRadius: '6px', textAlign: 'center', border: '1px solid #334155' }}>
+            <span style={{ fontSize: '12px', color: '#94a3b8' }}>Precio estimado por litro: </span>
+            <strong style={{ color: '#38bdf8' }}>
+              {estimatedPricePerLiter > 0 ? `$${estimatedPricePerLiter.toLocaleString('es-CL')} / L` : '$0 / L'}
+            </strong>
+          </div>
 
-          {/* Botones de Acción */}
-          <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
             <button
               type="button"
               onClick={onClose}
-              style={{
-                flex: 1,
-                padding: '12px',
-                background: '#334155',
-                color: '#f8fafc',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
+              style={{ flex: 1, padding: '10px', background: '#475569', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
             >
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={loading || vehicles.length === 0}
-              style={{
-                flex: 1,
-                padding: '12px',
-                background: vehicles.length === 0 ? '#64748b' : '#4f46e5',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                cursor: vehicles.length === 0 ? 'not-allowed' : 'pointer',
-                boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.3)'
-              }}
+              style={{ flex: 1, padding: '10px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
             >
-              {loading ? 'Guardando...' : 'Guardar Carga'}
+              Guardar Carga
             </button>
           </div>
         </form>
@@ -224,6 +186,3 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
     </div>
   );
 }
-
-const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '6px' };
-const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#f8fafc', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };

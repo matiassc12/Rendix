@@ -1,149 +1,97 @@
 /*
   Nombre del archivo: Sidebar.jsx
-  Propósito: Menú lateral de navegación con indicadores de alertas.
+  Propósito: Barra de navegación lateral fija para escritorio y menú deslizante para móviles.
 */
 
 import React from 'react';
-import { supabase } from '../supabaseClient';
 
-export default function Sidebar({ activeTab, setActiveTab, alertCount = 0 }) {
-  
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
+export default function Sidebar({ activeTab, setActiveTab, alertCount, theme, toggleTheme, isOpen, onCloseMobile }) {
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard General', icon: '📊' },
+    { id: 'vehicles', label: 'Mis Vehículos', icon: '🚘' },
+    { id: 'documents', label: 'Guantera Digital', icon: '📁' },
+    { id: 'trip', label: 'Cotizador de Fletes', icon: '🗺️' },
+    { id: 'fuel', label: 'Cargas de Bencina', icon: '⛽' },
+    { id: 'expenses', label: 'Gastos Operativos', icon: '💸' },
+    { id: 'cne', label: 'Red CNE (Bencinas)', icon: '⚡' },
+    { id: 'alerts', label: `Alertas de Flota ${alertCount > 0 ? `(${alertCount})` : ''}`, icon: '🚨' }
+  ];
 
   return (
-    <aside className="sidebar" style={{
-      width: '260px',
-      backgroundColor: '#0f172a',
-      borderRight: '1px solid #1e293b',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '24px 16px',
-      position: 'sticky',
-      top: 0,
-      height: '100vh',
-      boxSizing: 'border-box'
-    }}>
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '32px', paddingLeft: '8px' }}>
-        <span style={{ fontSize: '28px' }}>⚡</span>
-        <h1 style={{ margin: 0, fontSize: '24px', color: '#f8fafc', fontWeight: '900', tracking: '-1px' }}>
-          Rendix
-        </h1>
-      </div>
+    <>
+      {/* Capa oscura para cerrar el menú en móviles al hacer clic afuera */}
+      <div 
+        className={`sidebar-overlay ${isOpen ? 'open' : ''}`} 
+        onClick={onCloseMobile} 
+      />
 
-      {/* Navegación */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-        <SidebarButton 
-          icon="📊" 
-          label="Dashboard" 
-          isActive={activeTab === 'dashboard'} 
-          onClick={() => setActiveTab('dashboard')} 
-        />
-        <SidebarButton 
-          icon="🚗" 
-          label="Mis Vehículos" 
-          isActive={activeTab === 'vehicles'} 
-          onClick={() => setActiveTab('vehicles')} 
-        />
-        <SidebarButton 
-          icon="🗂️" 
-          label="Guantera Digital" 
-          isActive={activeTab === 'documents'} 
-          onClick={() => setActiveTab('documents')} 
-        />
-        <SidebarButton 
-          icon="⛽" 
-          label="Cargas de Bencina" 
-          isActive={activeTab === 'fuel'} 
-          onClick={() => setActiveTab('fuel')} 
-        />
-        <SidebarButton 
-          icon="💸" 
-          label="Gastos y TAG" 
-          isActive={activeTab === 'expenses'} 
-          onClick={() => setActiveTab('expenses')} 
-        />
-        <SidebarButton 
-          icon="🗺️" 
-          label="Red CNE (Precios)" 
-          isActive={activeTab === 'cne'} 
-          onClick={() => setActiveTab('cne')} 
-        />
-        
-        {/* Botón de Alertas con Badge Dinámico */}
-        <button
-          onClick={() => setActiveTab('alerts')}
-          style={{
-            ...buttonStyle,
-            backgroundColor: activeTab === 'alerts' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-            color: activeTab === 'alerts' ? '#38bdf8' : '#94a3b8',
-            marginTop: '16px',
-            border: activeTab === 'alerts' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
-          }}
-        >
-          <span style={{ fontSize: '18px' }}>🚨</span>
-          <span style={{ flex: 1, textAlign: 'left', fontWeight: activeTab === 'alerts' ? '700' : '600' }}>Alertas</span>
-          {alertCount > 0 && (
-            <span style={{
-              background: '#ef4444',
-              color: '#fff',
-              fontSize: '11px',
-              fontWeight: '800',
-              padding: '2px 8px',
-              borderRadius: '12px'
-            }}>
-              {alertCount}
+      {/* Contenedor del Sidebar controlado por clases CSS */}
+      <aside className={`sidebar-container ${isOpen ? 'open' : ''}`}>
+        {/* LOGO / TÍTULO */}
+        <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '950', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+              Rendix<span style={{ color: '#38bdf8' }}>App</span>
+            </h1>
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '700', textTransform: 'uppercase' }}>
+              Duoc UC • Capstone
             </span>
-          )}
-        </button>
-      </nav>
+          </div>
+          <button 
+            onClick={toggleTheme} 
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', width: '36px', height: '36px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            title="Cambiar tema claro/oscuro"
+          >
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+        </div>
 
-      {/* Botón de Cerrar Sesión */}
-      <button
-        onClick={handleLogout}
-        style={{
-          ...buttonStyle,
-          color: '#ef4444',
-          marginTop: 'auto',
-          backgroundColor: 'transparent'
-        }}
-      >
-        <span>🚪</span> Cerrar Sesión
-      </button>
-    </aside>
+        {/* MENÚ DE NAVEGACIÓN */}
+        <nav style={{ flex: 1, padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
+          {menuItems.map(item => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: isActive ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)' : 'transparent',
+                  color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                  fontWeight: isActive ? '800' : '600',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  boxShadow: isActive ? '0 4px 6px -1px rgba(59, 130, 246, 0.3)' : 'none',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>{item.icon}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {item.id === 'alerts' && alertCount > 0 && (
+                  <span style={{ background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: '900', padding: '2px 6px', borderRadius: '10px' }}>
+                    {alertCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* PIE DE SIDEBAR */}
+        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', fontSize: '11px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+          Rendix Cloud v2.5 • Duoc UC
+        </div>
+      </aside>
+    </>
   );
 }
-
-// Componente auxiliar interno para mantener los botones limpios
-const SidebarButton = ({ icon, label, isActive, onClick }) => {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        ...buttonStyle,
-        backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-        color: isActive ? '#38bdf8' : '#94a3b8',
-        border: isActive ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
-      }}
-    >
-      <span style={{ fontSize: '18px' }}>{icon}</span>
-      <span style={{ fontWeight: isActive ? '700' : '600' }}>{label}</span>
-    </button>
-  );
-};
-
-// Estilo base para los botones
-const buttonStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '12px',
-  padding: '12px 16px',
-  borderRadius: '12px',
-  fontSize: '14px',
-  cursor: 'pointer',
-  transition: 'all 0.2s ease',
-  width: '100%',
-  textAlign: 'left'
-};

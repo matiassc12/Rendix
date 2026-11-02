@@ -1,8 +1,6 @@
 /*
   Nombre del archivo: App.jsx
-  Propósito: Componente principal de Rendix Cloud. Administra la sesión, 
-  operaciones CRUD con Supabase, notificaciones estéticas, Guantera Digital, 
-  Registro de Mantenciones, fotos de vehículos y Analítica.
+  Propósito: Componente principal de RendixApp con layout unificado y control de sesión.
 */
 
 import React, { useState, useEffect } from 'react';
@@ -20,6 +18,7 @@ import ExpensesView from './views/ExpensesView';
 import CneView from './views/CneView';
 import AlertsView from './views/AlertsView';
 import DocumentsView from './views/DocumentsView'; 
+import TripView from './views/TripView';
 
 import VehicleModal from './modals/VehicleModal';
 import FuelModal from './modals/FuelModal';
@@ -32,26 +31,27 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [toasts, setToasts] = useState([]);
   
-  // Control de estado para modales
+  const [theme, setTheme] = useState('dark');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const [modalState, setModalState] = useState({ type: null, data: null });
   const [isCneLoading, setIsCneLoading] = useState(false);
 
-  // Estados sincronizados con Supabase
   const [vehicles, setVehicles] = useState([]);
   const [fuelRecords, setFuelRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [cneStations, setCneStations] = useState([]);
 
-  // Lista inicial de respaldo para la Red CNE
-  const [cneStations, setCneStations] = useState([
-    { id: 1, name: 'Copec - Providencia 1400', commune: 'Providencia', p93: 1280, p95: 1325, p97: 1370, diesel: 1045 },
-    { id: 2, name: 'Petrobras - Alameda 3200', commune: 'Santiago', p93: 1265, p95: 1310, p97: 1355, diesel: 1030 },
-    { id: 3, name: 'Shell - Américo Vespucio 1500', commune: 'Ñuñoa', p93: 1275, p95: 1320, p97: 1365, diesel: 1040 }
-  ]);
-
-  const [cneFuelType, setCneFuelType] = useState('95');
   const [dashVehicleFilter, setDashVehicleFilter] = useState('all');
 
-  // Control de Sesión con Supabase Auth
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -64,12 +64,12 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Cargar datos desde Supabase al iniciar sesión
   useEffect(() => {
     if (session) {
       fetchUserVehicles();
       fetchFuelRecords();
       fetchExpenses();
+      fetchCneStations();
     }
   }, [session]);
 
@@ -89,7 +89,7 @@ export default function App() {
         color: v.color || '#4f46e5',
         currentKm: Number(v.current_km || 0),
         plate: v.plate || 'SIN PATENTE',
-        image_url: v.image_url || '', // Imagen / Foto del vehículo
+        image_url: v.image_url || '',
         last_service_km: Number(v.last_service_km || 0),
         last_service_date: v.last_service_date || '',
         soap_expiration: v.soap_expiration || '',
@@ -112,7 +112,18 @@ export default function App() {
     if (!error && data) setExpenses(data);
   };
 
-  // Sistema de Notificaciones Estéticas (Toasts)
+  const fetchCneStations = async () => {
+    setIsCneLoading(true);
+    try {
+      const { data, error } = await supabase.from('cne_stations').select('*').order('commune', { ascending: true });
+      if (!error && data && data.length > 0) setCneStations(data);
+    } catch (err) {
+      console.error('Error al obtener cne_stations:', err);
+    } finally {
+      setIsCneLoading(false);
+    }
+  };
+
   const showToast = (message) => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message }]);
@@ -120,11 +131,8 @@ export default function App() {
   };
 
   const closeModal = () => setModalState({ type: null, data: null });
-  const openModal = (type, data = null) => {
-    setModalState({ type, data });
-  };
+  const openModal = (type, data = null) => setModalState({ type, data });
 
-  // CRUD Manejadores
   const handleVehicleSubmit = async (form) => {
     if (!session) return;
     const payload = {
@@ -136,16 +144,14 @@ export default function App() {
       year: Number(form.year),
       current_km: Number(form.currentKm),
       plate: form.plate ? form.plate.trim().toUpperCase() : 'SIN PATENTE',
-      image_url: form.image_url || null // Guardar la URL de la foto
+      image_url: form.image_url || null
     };
     if (form.id) {
-      const { error } = await supabase.from('user_vehicles').update(payload).eq('id', form.id);
-      if (!error) showToast('✨ Vehículo actualizado correctamente');
-      else showToast('❌ Error al actualizar el vehículo');
+      await supabase.from('user_vehicles').update(payload).eq('id', form.id);
+      showToast('✨ Vehículo actualizado');
     } else {
-      const { error } = await supabase.from('user_vehicles').insert([payload]);
-      if (!error) showToast('🎉 Vehículo registrado con éxito en tu garaje');
-      else showToast('❌ Error al registrar el vehículo');
+      await supabase.from('user_vehicles').insert([payload]);
+      showToast('🎉 Vehículo registrado');
     }
     fetchUserVehicles();
     closeModal();
@@ -153,134 +159,83 @@ export default function App() {
 
   const deleteVehicle = async (id) => {
     if (window.confirm('¿Estás seguro de eliminar este vehículo?')) {
-      const { error } = await supabase.from('user_vehicles').delete().eq('id', id);
-      if (!error) {
-        fetchUserVehicles();
-        fetchFuelRecords();
-        fetchExpenses();
-        showToast('🗑️ Vehículo eliminado correctamente');
-      } else showToast('❌ Error al eliminar el vehículo');
+      await supabase.from('user_vehicles').delete().eq('id', id);
+      fetchUserVehicles();
+      fetchFuelRecords();
+      fetchExpenses();
+      showToast('🗑️ Vehículo eliminado');
+    }
+  };
+
+  const handleFuelSubmit = async (form) => {
+    if (!session) return;
+    const payload = {
+      user_id: session.user.id,
+      vehicle_id: form.vehicle_id || form.vehicleId,
+      date: form.date || new Date().toISOString().split('T')[0],
+      liters: Number(form.liters || 0),
+      total: Number(form.total || 0),
+      odometer: Number(form.odometer || form.currentKm || 0),
+      fuel_type: form.fuel_type || '95',
+      station: form.station || ''
+    };
+    const { data } = await supabase.from('fuel_records').insert([payload]).select();
+    if (data) setFuelRecords(prev => [data[0], ...prev]);
+    showToast('⛽ Carga registrada');
+    closeModal();
+  };
+
+  const handleDeleteFuel = async (id) => {
+    if (window.confirm('¿Eliminar carga?')) {
+      await supabase.from('fuel_records').delete().eq('id', id);
+      setFuelRecords(prev => prev.filter(item => item.id !== id));
+      showToast('🗑️ Carga eliminada');
+    }
+  };
+
+  const handleExpenseSubmit = async (form) => {
+    if (!session) return;
+    const payload = {
+      user_id: session.user.id,
+      vehicle_id: form.vehicle_id || form.vehicleId,
+      date: form.date || new Date().toISOString().split('T')[0],
+      amount: Number(form.amount || 0),
+      category: form.category || 'Otros',
+      description: form.description || ''
+    };
+    const { data } = await supabase.from('expenses').insert([payload]).select();
+    if (data) setExpenses(prev => [data[0], ...prev]);
+    showToast('💰 Gasto registrado');
+    closeModal();
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (window.confirm('¿Eliminar gasto?')) {
+      await supabase.from('expenses').delete().eq('id', id);
+      setExpenses(prev => prev.filter(item => item.id !== id));
+      showToast('🗑️ Gasto eliminado');
     }
   };
 
   const handleServiceSubmit = async (form) => {
     if (!session) return;
-    const { error } = await supabase
-      .from('user_vehicles')
-      .update({
-        last_service_date: form.last_service_date,
-        last_service_km: form.last_service_km
-      })
-      .eq('id', form.vehicleId);
-
-    if (!error) {
-      fetchUserVehicles();
-      closeModal();
-      showToast('🔧 ¡Mantención registrada correctamente!');
-    } else {
-      showToast('❌ Error al registrar la mantención');
-    }
+    await supabase.from('user_vehicles').update({
+      last_service_date: form.last_service_date,
+      last_service_km: form.last_service_km
+    }).eq('id', form.vehicleId);
+    fetchUserVehicles();
+    closeModal();
+    showToast('🔧 Mantención registrada');
   };
 
-const handleSaveDocuments = async (vehicleId, updatedDocs) => {
+  const handleSaveDocuments = async (vehicleId, updatedDocs) => {
     if (!session) return;
-    
-    const { error } = await supabase
-      .from('user_vehicles')
-      .update(updatedDocs)
-      .eq('id', vehicleId);
-
-    if (!error) {
-      fetchUserVehicles();
-      showToast('💾 Documentos guardados con éxito');
-    } else {
-      console.error('Error al guardar en Supabase:', error);
-      showToast(`❌ Error: ${error.message || 'No se pudo guardar'}`);
-    }
+    await supabase.from('user_vehicles').update(updatedDocs).eq('id', vehicleId);
+    fetchUserVehicles();
+    showToast('💾 Documentos guardados');
   };
 
- const handleRefreshCne = async () => {
-    setIsCneLoading(true);
-    showToast('🔄 Consultando Red CNE vía Supabase Edge...');
-
-    try {
-      const { data, error } = await supabase.functions.invoke('quick-processor');
-
-      if (error) {
-        throw new Error(error.message || 'Error al conectar con Supabase Edge');
-      }
-
-      // Si la función devuelve un error controlado de la CNE
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      const rawList = Array.isArray(data) ? data : (data?.estaciones || data?.data || []);
-
-      if (rawList.length === 0) {
-        throw new Error('La API de CNE no entregó datos de estaciones.');
-      }
-
-      // Mapeo oficial unificando Asistido y Autoservicio
-      const formatted = rawList.map((item, index) => {
-        const prices = item.precios || item.precios_combustible || {};
-
-        const getMinPrice = (...keys) => {
-          const valid = keys
-            .map(k => Number(prices[k] || item[k] || 0))
-            .filter(p => !isNaN(p) && p > 0);
-          return valid.length > 0 ? Math.min(...valid) : 0;
-        };
-
-        return {
-          id: item.id || item.codigo_estacion || index,
-          name: item.nombre_fantasia || item.razon_social || item.distribuidor || 'Estación de Servicio',
-          brand: item.distribuidor || item.marca || 'Generica',
-          address: item.direccion || 'Sin dirección',
-          commune: item.nombre_comuna || item.comuna || 'Otra Comuna',
-          region: item.nombre_region || item.region || 'Otra Región',
-          p93: getMinPrice('1', '8', '93', 'p93', 'A93', 'precio_93'),
-          p95: getMinPrice('7', '9', '95', 'p95', 'A95', 'precio_95'),
-          p97: getMinPrice('2', '10', '97', 'p97', 'A97', 'precio_97'),
-          diesel: getMinPrice('3', '11', 'DI', 'ADI', 'diesel', 'precio_diesel'),
-          kerosene: getMinPrice('4', '12', 'KE', 'AKE', 'kerosene', 'precio_kerosene')
-        };
-      }).filter(s => s.p93 > 0 || s.p95 > 0 || s.p97 > 0 || s.diesel > 0 || s.kerosene > 0);
-
-      setCneStations(formatted);
-      showToast(`⚡ ${formatted.length.toLocaleString('es-CL')} estaciones sincronizadas en vivo`);
-
-    } catch (err) {
-      console.error('Error CNE:', err);
-      showToast(`❌ ${err.message || 'Error de conexión con la CNE'}`);
-    } finally {
-      setIsCneLoading(false);
-    }
-  };
-
-const handleDeleteFuel = async (id) => {
-    try {
-      // 1. Eliminar de Supabase
-      const { error } = await supabase
-        .from('fuel_logs') // Ajusta el nombre de la tabla si en tu BD se llama 'fuels' o similar
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      // 2. Actualizar estado local (ajusta setFuels según el nombre de tu estado, ej: setFuelRecords)
-      setFuels(prev => prev.filter(item => item.id !== id));
-      showToast('🗑️ Carga de bencina eliminada');
-
-    } catch (err) {
-      console.error('Error al eliminar carga:', err);
-      showToast('❌ Error al eliminar la carga de bencina');
-    }
-  };
-  
-
-
-const getAlertCount = () => {
+  const getAlertCount = () => {
     let count = 0;
     vehicles.forEach(v => {
       const currentKm = Number(v.currentKm || 0);
@@ -290,7 +245,6 @@ const getAlertCount = () => {
       const remainingKm = nextServiceKm - currentKm;
 
       if (lastServiceKm > 0 && remainingKm <= 1500) count++;
-
       const docs = [v.soap_expiration, v.permiso_circulacion_expiration, v.revision_tecnica_expiration, v.seguro_privado_expiration, v.licencia_conducir_expiration];
       docs.forEach(dateStr => {
         if (dateStr && Math.ceil((new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24)) <= 30) count++;
@@ -334,21 +288,60 @@ const getAlertCount = () => {
     return (totalKmTraveled / totalLitersConsumed).toFixed(1);
   };
 
+  const calculateCostPerKm = () => {
+    if (!filteredFuels || filteredFuels.length === 0) return '0';
+    const recordsByVehicle = {};
+    filteredFuels.forEach(r => {
+      const vId = r.vehicle_id || r.vehicleId;
+      if (!vId) return;
+      if (!recordsByVehicle[vId]) recordsByVehicle[vId] = [];
+      recordsByVehicle[vId].push(r);
+    });
+
+    let totalKmTraveled = 0;
+    Object.values(recordsByVehicle).forEach(vRecords => {
+      if (vRecords.length < 2) return;
+      const sorted = [...vRecords].sort((a, b) => Number(a.odometer) - Number(b.odometer));
+      const kmDiff = Number(sorted[sorted.length - 1].odometer) - Number(sorted[0].odometer);
+      if (kmDiff > 0) totalKmTraveled += kmDiff;
+    });
+
+    if (totalKmTraveled === 0) return '0';
+    const grandTotalCost = totalFuelCost + totalExpenses;
+    return Math.round(grandTotalCost / totalKmTraveled).toLocaleString('es-CL');
+  };
+
   if (!session) {
-    return <Auth onLoginSuccess={(sess) => {
-      setSession(sess);
-      showToast('🔐 ¡Bienvenido de nuevo a Rendix!');
-    }} />;
+    return <Auth onLoginSuccess={(sess) => { setSession(sess); showToast('🔐 ¡Bienvenido!'); }} />;
   }
 
   return (
     <div className="app-container">
       <Toast toasts={toasts} />
+
+<div className="mobile-topbar">
+        <button 
+          onClick={() => setMobileMenuOpen(prev => !prev)} 
+          style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '22px', cursor: 'pointer' }}
+        >
+          ☰
+        </button>
+        <div style={{ fontWeight: '900', fontSize: '16px', color: 'var(--text-primary)' }}>
+          Rendix<span style={{ color: '#38bdf8' }}>App</span>
+        </div>
+        <button onClick={toggleTheme} style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer' }}>
+          {theme === 'dark' ? '🌙' : '☀️'}
+        </button>
+      </div>
       
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         alertCount={getAlertCount()} 
+        theme={theme}
+        toggleTheme={toggleTheme}
+        isOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       <main className="main-content">
@@ -360,41 +353,22 @@ const getAlertCount = () => {
             totalExpenses={totalExpenses}
             totalCargas={totalCargas}
             avgKm={calculateAvgKm()}
+            costPerKm={calculateCostPerKm()}
             dashVehicleFilter={dashVehicleFilter}
             setDashVehicleFilter={setDashVehicleFilter}
             setActiveTab={setActiveTab}
             openAnalyticsModal={() => openModal('analytics')}
           />
         )}
-        {activeTab === 'vehicles' && (
-          <VehiclesView vehicles={vehicles} deleteVehicle={deleteVehicle} openModal={(v) => openModal('vehicle', v)} />
-        )}
-        {activeTab === 'documents' && (
-          <DocumentsView vehicles={vehicles} onSaveDocuments={handleSaveDocuments} />
-        )}
-        {activeTab === 'fuel' && (
-          <FuelView 
-            fuelRecords={fuelRecords} 
-            vehicles={vehicles} 
-            openModal={() => openModal('fuel')} 
-            onDeleteFuel={handleDeleteFuel} 
-          />
-        )}
-        {activeTab === 'expenses' && (
-          <ExpensesView expenses={expenses} vehicles={vehicles} openModal={() => openModal('expense')} />
-        )}
-        {activeTab === 'cne' && (
-          <CneView cneStations={cneStations} cneFuelType={cneFuelType} setCneFuelType={setCneFuelType} onRefreshPrices={handleRefreshCne} isLoading={isCneLoading} />
-        )}
-        {activeTab === 'alerts' && (
-          <AlertsView 
-            vehicles={vehicles} 
-            openServiceModal={(vehicle) => openModal('service', vehicle)} 
-          />
-        )}
+        {activeTab === 'vehicles' && <VehiclesView vehicles={vehicles} deleteVehicle={deleteVehicle} openModal={(v) => openModal('vehicle', v)} />}
+        {activeTab === 'documents' && <DocumentsView vehicles={vehicles} onSaveDocuments={handleSaveDocuments} />}
+        {activeTab === 'trip' && <TripView vehicles={vehicles} fuelRecords={fuelRecords} />}
+        {activeTab === 'fuel' && <FuelView fuelRecords={fuelRecords} vehicles={vehicles} openModal={() => openModal('fuel')} onDeleteFuel={handleDeleteFuel} />}
+        {activeTab === 'expenses' && <ExpensesView expenses={expenses} vehicles={vehicles} openModal={() => openModal('expense')} onDeleteExpense={handleDeleteExpense} />}
+        {activeTab === 'cne' && <CneView cneStations={cneStations} isLoading={isCneLoading} onReload={fetchCneStations} />}
+        {activeTab === 'alerts' && <AlertsView vehicles={vehicles} openServiceModal={(vehicle) => openModal('service', vehicle)} />}
       </main>
 
-      {/* Renderizado de Modales */}
       {modalState.type === 'vehicle' && <VehicleModal editingVehicle={modalState.data} onClose={closeModal} onSubmit={handleVehicleSubmit} />}
       {modalState.type === 'fuel' && <FuelModal vehicles={vehicles} onClose={closeModal} onSubmit={handleFuelSubmit} />}
       {modalState.type === 'expense' && <ExpenseModal vehicles={vehicles} onClose={closeModal} onSubmit={handleExpenseSubmit} />}
