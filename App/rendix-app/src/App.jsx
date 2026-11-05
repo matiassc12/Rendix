@@ -74,6 +74,7 @@ export default function App() {
   }, [session]);
 
   const fetchUserVehicles = async () => {
+    // 🔧 CORRECCIÓN: El select('*') garantiza que se traigan las nuevas columnas de archivos
     const { data, error } = await supabase
       .from('user_vehicles')
       .select('*')
@@ -92,13 +93,24 @@ export default function App() {
         image_url: v.image_url || '',
         last_service_km: Number(v.last_service_km || 0),
         last_service_date: v.last_service_date || '',
+        
+        // Fechas
         soap_expiration: v.soap_expiration || '',
         permiso_circulacion_expiration: v.permiso_circulacion_expiration || '',
         revision_tecnica_expiration: v.revision_tecnica_expiration || '',
         seguro_privado_expiration: v.seguro_privado_expiration || '',
-        licencia_conducir_expiration: v.licencia_conducir_expiration || ''
+        licencia_conducir_expiration: v.licencia_conducir_expiration || '',
+        
+        // 🔧 CORRECCIÓN: Ahora incluimos explícitamente los campos de archivos adjuntos
+        soap_file: v.soap_file || '',
+        permiso_file: v.permiso_file || '',
+        revision_file: v.revision_file || '',
+        seguro_file: v.seguro_file || '',
+        licencia_file: v.licencia_file || ''
       }));
       setVehicles(formatted);
+    } else if (error) {
+      console.error('Error fetching vehicles:', error);
     }
   };
 
@@ -228,11 +240,26 @@ export default function App() {
     showToast('🔧 Mantención registrada');
   };
 
+  // 🔧 CORRECCIÓN: Función robusta para guardar y refrescar
   const handleSaveDocuments = async (vehicleId, updatedDocs) => {
     if (!session) return;
-    await supabase.from('user_vehicles').update(updatedDocs).eq('id', vehicleId);
-    fetchUserVehicles();
-    showToast('💾 Documentos guardados');
+    
+    try {
+      const { error } = await supabase
+        .from('user_vehicles')
+        .update(updatedDocs)
+        .eq('id', vehicleId);
+      
+      if (error) {
+        console.error('Error al guardar documentos en Supabase:', error);
+        alert(`❌ Error al guardar: ${error.message}`);
+      } else {
+        await fetchUserVehicles();
+        showToast('✨ Billetera digital guardada en la nube');
+      }
+    } catch (err) {
+      console.error('Error al guardar Billetera:', err);
+    }
   };
 
   const getAlertCount = () => {
@@ -319,7 +346,7 @@ export default function App() {
     <div className="app-container">
       <Toast toasts={toasts} />
 
-<div className="mobile-topbar">
+      <div className="mobile-topbar">
         <button 
           onClick={() => setMobileMenuOpen(prev => !prev)} 
           style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '22px', cursor: 'pointer' }}
