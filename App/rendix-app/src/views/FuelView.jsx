@@ -1,14 +1,37 @@
 /*
   Nombre del archivo: FuelView.jsx
-  Propósito: Historial de cargas de combustible con avatar/foto miniatura del vehículo,
-  información de odómetro y opción de eliminación.
+  Propósito: Historial de cargas de combustible con avatar del vehículo,
+  referencia de precios en vivo desde API CNE y eliminación.
 */
 
-import React from 'react';
+import React, { useState } from 'react';
 
-export default function FuelView({ fuelRecords = [], vehicles = [], openModal, onDeleteFuel }) {
+export default function FuelView({
+  fuelRecords = [],
+  vehicles = [],
+  cneStations = [],
+  isCneLoading = false,
+  openModal,
+  onDeleteFuel
+}) {
+  const [refFuelType, setRefFuelType] = useState('p95');
 
-  // Generar la celda con la foto/avatar y nombre del vehículo
+  const fuelLabels = {
+    p93: '93 Oct.',
+    p95: '95 Oct.',
+    p97: '97 Oct.',
+    diesel: 'Diésel'
+  };
+
+  const validStations = cneStations.filter((s) => Number(s[refFuelType]) > 0);
+  const cheapestStation =
+    validStations.length > 0
+      ? validStations.reduce(
+          (min, curr) => (Number(curr[refFuelType]) < Number(min[refFuelType]) ? curr : min),
+          validStations[0]
+        )
+      : null;
+
   const renderVehicleCell = (vehicleId) => {
     const v = vehicles.find(item => item.id === vehicleId);
     if (!v) return <span style={{ color: '#94a3b8' }}>Vehículo no encontrado</span>;
@@ -42,7 +65,7 @@ export default function FuelView({ fuelRecords = [], vehicles = [], openModal, o
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid #334155', paddingBottom: '20px' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '28px', color: '#f8fafc', fontWeight: '900', letterSpacing: '-0.5px' }}>⛽ Historial de Cargas de Bencina</h2>
-          <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '14px' }}>Controla el consumo, los litros y el costo histórico de tus cargas.</p>
+          <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '14px' }}>Controla tus litros cargados y el gasto histórico por vehículo.</p>
         </div>
 
         <button
@@ -63,7 +86,58 @@ export default function FuelView({ fuelRecords = [], vehicles = [], openModal, o
         </button>
       </div>
 
-      {/* Tabla con Avatares de Imagen */}
+      {/* Banner de referencia en vivo desde API CNE */}
+      <div style={{
+        background: 'rgba(56, 189, 248, 0.08)',
+        border: '1px solid rgba(56, 189, 248, 0.25)',
+        borderRadius: '12px',
+        padding: '12px 18px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <span style={{ fontSize: '13px', color: '#cbd5e1' }}>
+          ⚡ <strong style={{ color: '#38bdf8' }}>Referencia API CNE ({fuelLabels[refFuelType]}):</strong>{' '}
+          {isCneLoading
+            ? 'Consultando precios en línea...'
+            : cheapestStation
+              ? (
+                <>
+                  Más económica en <strong>{cheapestStation.commune}</strong>: {cheapestStation.name} —{' '}
+                  <strong style={{ color: '#4ade80' }}>
+                    ${Number(cheapestStation[refFuelType]).toLocaleString('es-CL')}/L
+                  </strong>
+                </>
+              )
+              : 'Sin precios disponibles'}
+        </span>
+
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {Object.entries(fuelLabels).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setRefFuelType(key)}
+              style={{
+                background: refFuelType === key ? '#38bdf8' : 'rgba(15, 23, 42, 0.6)',
+                color: refFuelType === key ? '#0f172a' : '#94a3b8',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: '800',
+                cursor: 'pointer'
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabla */}
       {fuelRecords.length === 0 ? (
         <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
           No hay cargas de combustible registradas todavía.
@@ -75,7 +149,7 @@ export default function FuelView({ fuelRecords = [], vehicles = [], openModal, o
               <tr style={{ background: '#0f172a', borderBottom: '1px solid #334155', color: '#94a3b8', fontSize: '12px', textTransform: 'uppercase' }}>
                 <th style={{ padding: '16px' }}>Fecha</th>
                 <th style={{ padding: '16px' }}>Vehículo</th>
-                <th style={{ padding: '16px' }}>Odómetro</th>
+                <th style={{ padding: '16px' }}>Odómetro (Opc.)</th>
                 <th style={{ padding: '16px' }}>Litros</th>
                 <th style={{ padding: '16px' }}>Costo Total</th>
                 <th style={{ padding: '16px', textAlign: 'center' }}>Acciones</th>
@@ -84,13 +158,21 @@ export default function FuelView({ fuelRecords = [], vehicles = [], openModal, o
             <tbody>
               {fuelRecords.map(record => {
                 const vId = record.vehicle_id || record.vehicleId;
+                const odo = Number(record.odometer || 0);
+
                 return (
-                  <tr key={record.id} style={{ borderBottom: '1px solid #334155', transition: 'background 0.2s' }}>
+                  <tr key={record.id} style={{ borderBottom: '1px solid #334155' }}>
                     <td style={{ padding: '16px', fontWeight: '600', color: '#f8fafc' }}>{record.date}</td>
                     <td style={{ padding: '16px' }}>{renderVehicleCell(vId)}</td>
-                    <td style={{ padding: '16px' }}>{Number(record.odometer || 0).toLocaleString('es-CL')} km</td>
-                    <td style={{ padding: '16px' }}>{Number(record.liters || 0).toFixed(1)} L</td>
-                    <td style={{ padding: '16px', fontWeight: '800', color: '#4ade80' }}>${Number(record.total || 0).toLocaleString('es-CL')}</td>
+                    <td style={{ padding: '16px', color: odo > 0 ? '#cbd5e1' : '#64748b' }}>
+                      {odo > 0 ? `${odo.toLocaleString('es-CL')} km` : '—'}
+                    </td>
+                    <td style={{ padding: '16px', fontWeight: '700', color: '#f8fafc' }}>
+                      {Number(record.liters || 0).toFixed(1)} L
+                    </td>
+                    <td style={{ padding: '16px', fontWeight: '800', color: '#4ade80' }}>
+                      ${Number(record.total || 0).toLocaleString('es-CL')}
+                    </td>
                     <td style={{ padding: '16px', textAlign: 'center' }}>
                       <button
                         onClick={() => onDeleteFuel(record.id)}

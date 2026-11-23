@@ -1,7 +1,7 @@
 /*
   Nombre del archivo: VehicleModal.jsx
   Propósito: Formulario modal para crear y editar vehículos con soporte para patentes,
-  cálculo automático de PRT y vista previa de fotografía del vehículo.
+  cálculo automático de PRT, rendimiento manual (km/L) y vista previa de fotografía.
 */
 
 import React, { useState, useEffect } from 'react';
@@ -16,7 +16,8 @@ export default function VehicleModal({ editingVehicle = null, onClose, onSubmit 
     year: editingVehicle?.year || new Date().getFullYear(),
     currentKm: editingVehicle?.currentKm || 0,
     plate: editingVehicle?.plate || '',
-    image_url: editingVehicle?.image_url || ''
+    image_url: editingVehicle?.image_url || '',
+    manual_efficiency: editingVehicle?.manual_efficiency || ''
   });
 
   const [plateAnalysis, setPlateAnalysis] = useState(null);
@@ -130,49 +131,74 @@ export default function VehicleModal({ editingVehicle = null, onClose, onSubmit 
             </div>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>PATENTE (AUTO O MOTO CHILE)</label>
-            <input
-              type="text"
-              name="plate"
-              required
-              placeholder="Ej: VDBD55, VBY38"
-              value={formData.plate}
-              onChange={handleChange}
-              maxLength={7}
-              style={{
-                width: '100%',
-                background: '#0f172a',
-                border: `1px solid ${plateAnalysis ? (plateAnalysis.isValid ? '#22c55e' : '#ef4444') : '#334155'}`,
-                borderRadius: '8px',
-                padding: '10px 12px',
-                color: '#f8fafc',
-                fontWeight: '800',
-                letterSpacing: '1px',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>PATENTE (CHILE)</label>
+              <input
+                type="text"
+                name="plate"
+                required
+                placeholder="Ej: VDBD55, VBY38"
+                value={formData.plate}
+                onChange={handleChange}
+                maxLength={7}
+                style={{
+                  width: '100%',
+                  background: '#0f172a',
+                  border: `1px solid ${plateAnalysis ? (plateAnalysis.isValid ? '#22c55e' : '#ef4444') : '#334155'}`,
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  color: '#f8fafc',
+                  fontWeight: '800',
+                  letterSpacing: '1px',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
 
-            {plateAnalysis && (
-              <div style={{ marginTop: '6px', fontSize: '12px' }}>
-                {plateAnalysis.isValid ? (
-                  <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '6px 10px', borderRadius: '6px', color: '#4ade80' }}>
-                    ✅ <strong>Patente válida</strong> ({plateAnalysis.format})
-                    {plateAnalysis.prtInfo && (
-                      <span style={{ display: 'block', marginTop: '2px', color: '#cbd5e1' }}>
-                        📋 PRT Obligatoria: <strong>{plateAnalysis.prtInfo.monthName}</strong>
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ color: '#ef4444', fontWeight: '600' }}>⚠️ Formato no reconocido.</div>
-                )}
-              </div>
-            )}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#38bdf8', marginBottom: '6px' }}>RENDIMIENTO (KM/L)</label>
+              <input
+                type="number"
+                name="manual_efficiency"
+                step="0.1"
+                min="0"
+                placeholder="Ej: 13.5"
+                value={formData.manual_efficiency}
+                onChange={handleChange}
+                style={{
+                  width: '100%',
+                  background: '#0f172a',
+                  border: '1px solid rgba(56, 189, 248, 0.45)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  color: '#4ade80',
+                  fontWeight: '800',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
           </div>
 
-          {/* CAMPO NUEVO: URL DE LA FOTOGRAFÍA */}
+          {plateAnalysis && (
+            <div style={{ fontSize: '12px' }}>
+              {plateAnalysis.isValid ? (
+                <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '6px 10px', borderRadius: '6px', color: '#4ade80' }}>
+                  ✅ <strong>Patente válida</strong> ({plateAnalysis.format})
+                  {plateAnalysis.prtInfo && (
+                    <span style={{ display: 'block', marginTop: '2px', color: '#cbd5e1' }}>
+                      📋 PRT Obligatoria: <strong>{plateAnalysis.prtInfo.monthName}</strong>
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div style={{ color: '#ef4444', fontWeight: '600' }}>⚠️ Formato de patente no reconocido.</div>
+              )}
+            </div>
+          )}
+
           <div>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>FOTO DEL VEHÍCULO (URL / ENLACE DE IMAGEN)</label>
             <input
@@ -184,7 +210,6 @@ export default function VehicleModal({ editingVehicle = null, onClose, onSubmit 
               style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '10px 12px', color: '#f8fafc', outline: 'none', boxSizing: 'border-box' }}
             />
             
-            {/* Previsualización en vivo dentro del modal */}
             {formData.image_url && (
               <div style={{ marginTop: '10px', borderRadius: '8px', overflow: 'hidden', height: '110px', border: '1px solid #334155', background: '#0f172a' }}>
                 <img 

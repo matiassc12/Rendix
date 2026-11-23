@@ -4,21 +4,12 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
   const [form, setForm] = useState({
     vehicle_id: vehicles.length > 0 ? vehicles[0].id : '',
     date: new Date().toISOString().split('T')[0],
-    odometer: vehicles.length > 0 ? (vehicles[0].currentKm || '') : '',
+    odometer: '',
     fuel_type: '95',
     station: '',
     liters: '',
     total: ''
   });
-
-  const handleVehicleChange = (vId) => {
-    const selected = vehicles.find(v => v.id === vId);
-    setForm(prev => ({
-      ...prev,
-      vehicle_id: vId,
-      odometer: selected ? (selected.currentKm || '') : prev.odometer
-    }));
-  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -48,9 +39,12 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
         padding: '24px',
         borderRadius: '12px',
         width: '460px',
-        maxWidth: '90%',
+        maxWidth: '92%',
+        maxHeight: '90vh',
+        overflowY: 'auto',
         border: '1px solid #334155',
-        color: '#fff'
+        color: '#fff',
+        boxSizing: 'border-box'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h3 style={{ margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -69,9 +63,9 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
             <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Vehículo *</label>
             <select
               value={form.vehicle_id}
-              onChange={(e) => handleVehicleChange(e.target.value)}
+              onChange={(e) => setForm({ ...form, vehicle_id: e.target.value })}
               required
-              style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+              style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
             >
               {vehicles.map(v => (
                 <option key={v.id} value={v.id}>
@@ -89,18 +83,17 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
                 value={form.date}
                 onChange={(e) => setForm({ ...form, date: e.target.value })}
                 required
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
               />
             </div>
             <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Odómetro (km) *</label>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Odómetro (Opcional)</label>
               <input
                 type="number"
-                placeholder="ej: 12000"
+                placeholder="Ej: 45200"
                 value={form.odometer}
                 onChange={(e) => setForm({ ...form, odometer: e.target.value })}
-                required
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
               />
             </div>
           </div>
@@ -111,7 +104,7 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
               <select
                 value={form.fuel_type}
                 onChange={(e) => setForm({ ...form, fuel_type: e.target.value })}
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
               >
                 <option value="93">Gasolina 93</option>
                 <option value="95">Gasolina 95</option>
@@ -128,7 +121,7 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
                 placeholder="Ej: Copec, Shell, JLC"
                 value={form.station}
                 onChange={(e) => setForm({ ...form, station: e.target.value })}
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
               />
             </div>
           </div>
@@ -143,7 +136,7 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
                 value={form.liters}
                 onChange={(e) => setForm({ ...form, liters: e.target.value })}
                 required
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
               />
             </div>
             <div>
@@ -154,7 +147,7 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
                 value={form.total}
                 onChange={(e) => setForm({ ...form, total: e.target.value })}
                 required
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0f172a', border: '1px solid #334155', color: '#fff', boxSizing: 'border-box' }}
               />
             </div>
           </div>
@@ -166,7 +159,7 @@ export default function FuelModal({ vehicles = [], onClose, onSubmit }) {
             </strong>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
             <button
               type="button"
               onClick={onClose}

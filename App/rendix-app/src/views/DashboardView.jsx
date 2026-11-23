@@ -8,6 +8,9 @@ import { generatePdfReport } from '../utils/pdfGenerator';
 
 export default function DashboardView({
   vehicles = [],
+  filteredVehicles,
+  filteredFuels = [],
+  filteredExpenses = [],
   totalFuelCost = 0,
   totalExpenses = 0,
   totalCargas = 0,
@@ -42,6 +45,7 @@ export default function DashboardView({
   }, []);
 
   const totalGeneral = totalFuelCost + totalExpenses;
+  const scopedVehicles = filteredVehicles || vehicles;
 
   let urgentAlerts = 0;
   let warningAlerts = 0;
@@ -65,6 +69,21 @@ export default function DashboardView({
       }
     });
   });
+
+  const handleExportPdf = () => {
+    generatePdfReport({
+      vehicles: scopedVehicles,
+      allVehicles: vehicles,
+      fuelRecords: filteredFuels,
+      expenses: filteredExpenses,
+      totalFuelCost,
+      totalExpenses,
+      avgKm,
+      costPerKm,
+      dashVehicleFilter,
+      indicators
+    });
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', boxSizing: 'border-box' }}>
@@ -158,7 +177,7 @@ export default function DashboardView({
           </button>
 
           <button
-            onClick={() => generatePdfReport({ vehicles, totalFuelCost, totalExpenses, indicators })}
+            onClick={handleExportPdf}
             style={{
               background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', color: '#ffffff', border: 'none',
               padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer',
@@ -197,11 +216,11 @@ export default function DashboardView({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
               <div style={{ background: 'var(--bg-card-inner)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '13px', fontWeight: '800', color: '#38bdf8', marginBottom: '4px' }}>1. Mis Vehículos</div>
-                <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)' }}>Ingresa tu vehículo con su patente para calcular la PRT automáticamente en Chile.</p>
+                <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)' }}>Ingresa tu vehículo con su patente (PRT automática) y su rendimiento manual en km/L.</p>
               </div>
               <div style={{ background: 'var(--bg-card-inner)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', marginBottom: '4px' }}>2. Cargas Combustible</div>
-                <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)' }}>Anota los odómetros en cada carga para obtener el rendimiento real en km/L.</p>
+                <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)' }}>Registra tus litros y monto pagado (el odómetro es opcional) para llevar el historial y precio por litro.</p>
               </div>
               <div style={{ background: 'var(--bg-card-inner)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '13px', fontWeight: '800', color: '#fca5a5', marginBottom: '4px' }}>3. Gastos y TAG</div>
@@ -213,15 +232,15 @@ export default function DashboardView({
           {activeGuideTab === 'formulas' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
               <div style={{ background: 'var(--bg-card-inner)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#4ade80', fontWeight: '800' }}>Rendimiento (km/L)</h4>
+                <h4 style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#4ade80', fontWeight: '800' }}>Rendimiento Manual (km/L)</h4>
                 <div style={{ background: 'var(--bg-secondary)', padding: '6px', borderRadius: '4px', fontSize: '10px', color: '#38bdf8', fontWeight: '700', textAlign: 'center' }}>
-                  Δ Odómetro / Litros
+                  Promedio de Rendimiento Configurado por Vehículo
                 </div>
               </div>
               <div style={{ background: 'var(--bg-card-inner)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <h4 style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#06b6d4', fontWeight: '800' }}>Costo Real / Km (TCO)</h4>
                 <div style={{ background: 'var(--bg-secondary)', padding: '6px', borderRadius: '4px', fontSize: '10px', color: '#06b6d4', fontWeight: '700', textAlign: 'center' }}>
-                  (Bencina + Gastos) / Distancia
+                  (Bencina + Gastos) / (Litros × km/L)
                 </div>
               </div>
             </div>
@@ -230,7 +249,7 @@ export default function DashboardView({
           {activeGuideTab === 'trip' && (
             <div style={{ background: 'var(--bg-card-inner)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
               <h4 style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#10b981', fontWeight: '800' }}>🗺️ Cotizador de Fletes</h4>
-              <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)' }}>Marca origen y destino en el mapa para calcular la distancia y obtener tu tarifa de cobro ideal con margen.</p>
+              <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)' }}>Marca origen y destino en el mapa para trazar la ruta por calles y obtener tu tarifa de cobro ideal con margen.</p>
             </div>
           )}
 
@@ -280,7 +299,7 @@ export default function DashboardView({
         boxSizing: 'border-box'
       }}>
         <div style={{ position: 'relative', padding: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Gasto Bencina</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Gasto Bencina ({totalCargas})</div>
           <div style={{ color: '#38bdf8', fontSize: '20px', fontWeight: '900', marginTop: '6px' }}>${Number(totalFuelCost).toLocaleString('es-CL')}</div>
           <span style={{ position: 'absolute', right: '12px', bottom: '12px', fontSize: '18px' }}>⛽</span>
         </div>
