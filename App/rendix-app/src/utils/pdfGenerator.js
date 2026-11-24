@@ -1,9 +1,11 @@
 /*
-  Nombre del archivo: pdfGenerator.js
-  Propósito: Función utilitaria para generar el Reporte Ejecutivo Integral en PDF
-  incluyendo KPIs operativos, vehículos con rendimiento manual, guantera digital completa,
-  desglose de gastos por categoría/registro e historial de cargas de combustible.
+  Nombre del archivo: src/utils/pdfGenerator.js
+  Propósito: Genera un reporte ejecutivo imprimible (PDF) de 5 secciones con KPIs financieros,
+  conversión UF/USD (Findic API), inventario vehicular, estado de los 5 documentos legales
+  en hora local, desglose de gastos operativos e historial de cargas de combustible.
 */
+
+import { getDaysUntilExpiration, formatDateCL } from './dateHelper';
 
 const escapeHtml = (value) => {
   if (value === null || value === undefined) return '';
@@ -16,19 +18,38 @@ const escapeHtml = (value) => {
 };
 
 const formatDateShort = (dateStr) => {
-  if (!dateStr) return '—';
-  const parts = String(dateStr).split('-');
-  if (parts.length === 3) {
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return escapeHtml(formatDateCL(dateStr));
+};
+
+const formatCurrency = (amount) => {
+  return `$${Math.round(Number(amount || 0)).toLocaleString('es-CL')}`;
+};
+
+const getFuelTypeLabel = (fuelType) => {
+  switch (String(fuelType || '').toLowerCase()) {
+    case '93':
+    case 'p93':
+      return 'Gasolina 93';
+    case '95':
+    case 'p95':
+      return 'Gasolina 95';
+    case '97':
+    case 'p97':
+      return 'Gasolina 97';
+    case 'diesel':
+      return 'Diésel';
+    case 'kerosene':
+      return 'Kerosene';
+    default:
+      return escapeHtml(fuelType || '—');
   }
-  return escapeHtml(dateStr);
 };
 
 const getDocStatusBadge = (dateStr) => {
-  if (!dateStr) {
+  const diffDays = getDaysUntilExpiration(dateStr);
+  if (diffDays === null) {
     return `<span style="color: #64748b;">No configurada</span>`;
   }
-  const diffDays = Math.ceil((new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24));
   const formatted = formatDateShort(dateStr);
 
   if (diffDays < 0) {
@@ -40,7 +61,7 @@ const getDocStatusBadge = (dateStr) => {
   return `<strong style="color: #0f172a;">${formatted}</strong> <span style="background: #dcfce7; color: #15803d; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: bold;">AL DÍA</span>`;
 };
 
-export const generatePdfReport = ({
+export function generatePdfReport({
   vehicles = [],
   allVehicles = [],
   fuelRecords = [],
@@ -50,283 +71,458 @@ export const generatePdfReport = ({
   avgKm = '0.0',
   costPerKm = '0',
   dashVehicleFilter = 'all',
-  indicators = { uf: 41226.39, dolar: 994.29 }
-}) => {
-  const fechaActual = new Date().toLocaleDateString('es-CL', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
+  indicators = { uf: 0, dolar: 0 }
+}) {
+  const vehicleCatalog = allVehicles.length > 0 ? allVehicles : vehicles;
 
-  const vehicleLookup = allVehicles.length > 0 ? allVehicles : vehicles;
   const resolveVehicleLabel = (vId) => {
-    const found = vehicleLookup.find((v) => v.id === vId);
-    if (!found) return 'Vehículo no asignado';
+    const found = vehicleCatalog.find((v) => v.id === vId);
+    if (!found) return 'Vehículo no registrado';
     return `${escapeHtml(found.name)} (${escapeHtml(found.plate || 'S/P')})`;
   };
 
-  const scopeLabel =
-    dashVehicleFilter === 'all'
-      ? `Flota Completa (${vehicles.length} vehículo${vehicles.length === 1 ? '' : 's'})`
-      : vehicles[0]
-        ? `${escapeHtml(vehicles[0].name)} • ${escapeHtml(vehicles[0].plate || 'Sin Patente')}`
-        : 'Vehículo Seleccionado';
+  const selectedVehicleObj =
+    dashVehicleFilter !== 'all'
+      ? vehicleCatalog.find((v) => v.id === dashVehicleFilter)
+      : null;
 
-  const totalGeneral = Number(totalFuelCost) + Number(totalExpenses);
-  const totalInUf = indicators.uf > 0 ? (totalGeneral / indicators.uf).toFixed(2) : '0.00';
-  const totalInUsd = indicators.dolar > 0 ? (totalGeneral / indicators.dolar).toFixed(2) : '0.00';
-  const totalLiters = fuelRecords.reduce((acc, r) => acc + Number(r.liters || 0), 0);
+  const scopeTitle = selectedVehicleObj
+    ? `${escapeHtml(selectedVehicleObj.name)} — Patente ${escapeHtml(selectedVehicleObj.plate || 'SIN PATENTE')}`
+    : `Flota Completa (${vehicles.length} vehículo${vehicles.length === 1 ? '' : 's'})`;
 
-  // 1. FILAS DE VEHÍCULOS
-  let vehiclesRowsHtml = vehicles
-    .map((v) => {
-      const lastServiceText =
-        v.last_service_date && Number(v.last_service_km) > 0
-          ? `${formatDateShort(v.last_service_date)} (${Number(v.last_service_km).toLocaleString('es-CL')} km)`
-          : 'Sin registro';
-
-      const manualEff = Number(v.manual_efficiency || 0);
-      const effText = manualEff > 0 ? `${manualEff.toFixed(1)} km/L` : 'No definido';
-
-      const imgTag = v.image_url
-        ? `<img src="${escapeHtml(v.image_url)}" style="width: 30px; height: 30px; border-radius: 4px; object-fit: cover; vertical-align: middle; margin-right: 8px;" />`
-        : `<span style="font-size: 15px; margin-right: 8px;">🚗</span>`;
-
-      return `
-        <tr>
-          <td style="padding: 9px; border-bottom: 1px solid #cbd5e1; font-weight: bold;">
-            <div style="display: flex; align-items: center;">
-              ${imgTag} <span>${escapeHtml(v.name || 'N/A')}</span>
-            </div>
-          </td>
-          <td style="padding: 9px; border-bottom: 1px solid #cbd5e1;">${escapeHtml(v.brand || 'N/A')} ${escapeHtml(v.model || '')} (${escapeHtml(v.year || '')})</td>
-          <td style="padding: 9px; border-bottom: 1px solid #cbd5e1; font-weight: bold; color: #0284c7;">${escapeHtml(v.plate || 'Sin Patente')}</td>
-          <td style="padding: 9px; border-bottom: 1px solid #cbd5e1; text-align: right;">${Number(v.currentKm || 0).toLocaleString('es-CL')} km</td>
-          <td style="padding: 9px; border-bottom: 1px solid #cbd5e1; text-align: right; font-weight: bold; color: ${manualEff > 0 ? '#16a34a' : '#64748b'};">${effText}</td>
-          <td style="padding: 9px; border-bottom: 1px solid #cbd5e1; font-size: 11px; color: #475569;">${lastServiceText}</td>
-        </tr>
-      `;
-    })
-    .join('');
-
-  if (vehicles.length === 0) {
-    vehiclesRowsHtml = `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #64748b;">No hay vehículos registrados en este filtro.</td></tr>`;
-  }
-
-  // 2. FILAS DE GUANTERA DIGITAL (5 DOCUMENTOS)
-  let documentsRowsHtml = vehicles
-    .map((v) => {
-      return `
-        <tr style="background: #f1f5f9;">
-          <td colspan="3" style="padding: 7px 10px; font-weight: bold; color: #0f172a; border-top: 1px solid #cbd5e1;">
-            ${escapeHtml(v.name)} (${escapeHtml(v.plate || 'Sin Patente')})
-          </td>
-        </tr>
-        <tr>
-          <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; width: 33%;">Revisión Técnica: ${getDocStatusBadge(v.revision_tecnica_expiration)}</td>
-          <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; width: 34%;">Permiso Circulación: ${getDocStatusBadge(v.permiso_circulacion_expiration)}</td>
-          <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; width: 33%;">SOAP: ${getDocStatusBadge(v.soap_expiration)}</td>
-        </tr>
-        <tr>
-          <td style="padding: 7px 10px; border-bottom: 1px solid #cbd5e1;">Seguro Privado: ${getDocStatusBadge(v.seguro_privado_expiration)}</td>
-          <td colspan="2" style="padding: 7px 10px; border-bottom: 1px solid #cbd5e1;">Licencia de Conducir: ${getDocStatusBadge(v.licencia_conducir_expiration)}</td>
-        </tr>
-      `;
-    })
-    .join('');
-
-  if (vehicles.length === 0) {
-    documentsRowsHtml = `<tr><td colspan="3" style="padding: 16px; text-align: center; color: #64748b;">Sin documentación para mostrar.</td></tr>`;
-  }
-
-  // 3. RESUMEN POR CATEGORÍA Y DETALLE DE GASTOS OPERATIVOS
-  const categoryTotals = {};
-  expenses.forEach((exp) => {
-    const cat = exp.category || 'Otros';
-    categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(exp.amount || 0);
+  const now = new Date();
+  const emissionDate = now.toLocaleDateString('es-CL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  const emissionTime = now.toLocaleTimeString('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit'
   });
 
-  const categoryBadgesHtml = Object.entries(categoryTotals)
-    .sort((a, b) => b[1] - a[1])
-    .map(([cat, sum]) => {
-      const pct = totalExpenses > 0 ? Math.round((sum / totalExpenses) * 100) : 0;
-      return `
-        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px;">
-          <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">${escapeHtml(cat)} (${pct}%)</div>
-          <div style="font-size: 14px; font-weight: bold; color: #0f172a; margin-top: 2px;">$${Math.round(sum).toLocaleString('es-CL')}</div>
+  const totalGeneral = Number(totalFuelCost || 0) + Number(totalExpenses || 0);
+  const ufRate = Number(indicators?.uf || 0);
+  const usdRate = Number(indicators?.dolar || 0);
+  const totalUF = ufRate > 0 ? (totalGeneral / ufRate).toFixed(2) : '0.00';
+  const totalUSD = usdRate > 0 ? (totalGeneral / usdRate).toFixed(2) : '0.00';
+
+  // Agrupación de gastos por categoría (Sección 4)
+  const categoryTotals = {};
+  expenses.forEach((exp) => {
+    const cat = exp.category || 'Otro';
+    if (!categoryTotals[cat]) {
+      categoryTotals[cat] = { count: 0, amount: 0 };
+    }
+    categoryTotals[cat].count += 1;
+    categoryTotals[cat].amount += Number(exp.amount || 0);
+  });
+
+  const sortedCategories = Object.entries(categoryTotals).sort(
+    (a, b) => b[1].amount - a[1].amount
+  );
+
+  // Totales de combustible (Sección 5)
+  const totalLiters = fuelRecords.reduce((acc, r) => acc + Number(r.liters || 0), 0);
+
+  // Filas Sección 2: Inventario
+  const inventoryRowsHtml =
+    vehicles.length === 0
+      ? `<tr><td colspan="6" style="text-align:center;color:#64748b;padding:14px;">Sin vehículos registrados en este filtro.</td></tr>`
+      : vehicles
+          .map((v) => {
+            const avatar = v.image_url
+              ? `<img src="${escapeHtml(v.image_url)}" alt="${escapeHtml(v.name)}" style="width:42px;height:30px;object-fit:cover;border-radius:4px;border:1px solid #cbd5e1;" onerror="this.style.display='none'" />`
+              : `<div style="width:42px;height:30px;background:#e2e8f0;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;">🚗</div>`;
+
+            const effText =
+              Number(v.manual_efficiency) > 0
+                ? `${Number(v.manual_efficiency).toFixed(1)} km/L`
+                : 'No definido';
+
+            const serviceText =
+              Number(v.last_service_km) > 0
+                ? `${Number(v.last_service_km).toLocaleString('es-CL')} km${v.last_service_date ? ` (${formatDateShort(v.last_service_date)})` : ''}`
+                : 'Sin registro';
+
+            return `
+              <tr>
+                <td style="width:50px;">${avatar}</td>
+                <td>
+                  <strong>${escapeHtml(v.name)}</strong><br/>
+                  <span style="font-size:10px;color:#475569;">${escapeHtml(v.brand)} ${escapeHtml(v.model)} (${escapeHtml(v.year)})</span>
+                </td>
+                <td><span style="background:#f1f5f9;border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px;font-weight:700;font-size:11px;">${escapeHtml(v.plate || 'S/P')}</span></td>
+                <td style="text-align:right;font-weight:600;">${Number(v.currentKm || 0).toLocaleString('es-CL')} km</td>
+                <td style="text-align:right;font-weight:700;color:#15803d;">${effText}</td>
+                <td style="font-size:11px;color:#334155;">${serviceText}</td>
+              </tr>
+            `;
+          })
+          .join('');
+
+  // Filas Sección 3: Guantera Digital (5 documentos)
+  const documentsRowsHtml =
+    vehicles.length === 0
+      ? `<tr><td colspan="6" style="text-align:center;color:#64748b;padding:14px;">Sin vehículos para evaluar documentación.</td></tr>`
+      : vehicles
+          .map(
+            (v) => `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(v.name)}</strong><br/>
+                  <span style="font-size:10px;color:#64748b;">${escapeHtml(v.plate || 'S/P')}</span>
+                </td>
+                <td>${getDocStatusBadge(v.soap_expiration)}</td>
+                <td>${getDocStatusBadge(v.permiso_circulacion_expiration)}</td>
+                <td>${getDocStatusBadge(v.revision_tecnica_expiration)}</td>
+                <td>${getDocStatusBadge(v.seguro_privado_expiration)}</td>
+                <td>${getDocStatusBadge(v.licencia_conducir_expiration)}</td>
+              </tr>
+            `
+          )
+          .join('');
+
+  // Filas Sección 4A: Resumen por Categoría
+  const categorySummaryRowsHtml =
+    sortedCategories.length === 0
+      ? `<tr><td colspan="4" style="text-align:center;color:#64748b;padding:12px;">Sin gastos operativos registrados.</td></tr>`
+      : sortedCategories
+          .map(([cat, info]) => {
+            const pct =
+              totalExpenses > 0 ? ((info.amount / totalExpenses) * 100).toFixed(1) : '0.0';
+            return `
+              <tr>
+                <td><strong>${escapeHtml(cat)}</strong></td>
+                <td style="text-align:center;">${info.count}</td>
+                <td style="text-align:right;font-weight:700;">${formatCurrency(info.amount)}</td>
+                <td style="text-align:right;color:#475569;">${pct}%</td>
+              </tr>
+            `;
+          })
+          .join('');
+
+  // Filas Sección 4B: Detalle de Gastos Operativos
+  const expenseRowsHtml =
+    expenses.length === 0
+      ? `<tr><td colspan="5" style="text-align:center;color:#64748b;padding:14px;">No hay movimientos de gastos operativos en este período.</td></tr>`
+      : expenses
+          .map((exp) => {
+            const vId = exp.vehicle_id || exp.vehicleId;
+            return `
+              <tr>
+                <td>${formatDateShort(exp.date)}</td>
+                <td>${resolveVehicleLabel(vId)}</td>
+                <td><span style="background:#f1f5f9;border:1px solid #cbd5e1;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">${escapeHtml(exp.category || 'General')}</span></td>
+                <td style="color:#334155;">${escapeHtml(exp.description || '—')}</td>
+                <td style="text-align:right;font-weight:700;color:#be123c;">${formatCurrency(exp.amount)}</td>
+              </tr>
+            `;
+          })
+          .join('');
+
+  // Filas Sección 5: Historial de Cargas de Combustible
+  const fuelRowsHtml =
+    fuelRecords.length === 0
+      ? `<tr><td colspan="7" style="text-align:center;color:#64748b;padding:14px;">No hay cargas de combustible registradas.</td></tr>`
+      : fuelRecords
+          .map((rec) => {
+            const vId = rec.vehicle_id || rec.vehicleId;
+            const liters = Number(rec.liters || 0);
+            const total = Number(rec.total || 0);
+            const unitPrice = liters > 0 && total > 0 ? Math.round(total / liters) : 0;
+            const odo = Number(rec.odometer || 0);
+
+            return `
+              <tr>
+                <td>${formatDateShort(rec.date)}</td>
+                <td>${resolveVehicleLabel(vId)}</td>
+                <td>${getFuelTypeLabel(rec.fuel_type)}</td>
+                <td>${escapeHtml(rec.station || '—')}</td>
+                <td style="text-align:right;">${odo > 0 ? `${odo.toLocaleString('es-CL')} km` : '—'}</td>
+                <td style="text-align:right;font-weight:600;">${liters.toFixed(2)} L</td>
+                <td style="text-align:right;color:#475569;">${unitPrice > 0 ? `${formatCurrency(unitPrice)}/L` : '—'}</td>
+                <td style="text-align:right;font-weight:700;color:#15803d;">${formatCurrency(total)}</td>
+              </tr>
+            `;
+          })
+          .join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Reporte Ejecutivo RendixApp - ${escapeHtml(emissionDate)}</title>
+      <style>
+        @page {
+          size: A4 portrait;
+          margin: 14mm 12mm;
+        }
+        * {
+          box-sizing: border-box;
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          color: #0f172a;
+          background: #ffffff;
+          margin: 0;
+          padding: 0;
+          font-size: 11px;
+          line-height: 1.4;
+        }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          border-bottom: 2px solid #1d4ed8;
+          padding-bottom: 12px;
+          margin-bottom: 16px;
+        }
+        .brand h1 {
+          margin: 0;
+          font-size: 22px;
+          font-weight: 900;
+          color: #0f172a;
+          letter-spacing: -0.5px;
+        }
+        .brand h1 span {
+          color: #2563eb;
+        }
+        .brand p {
+          margin: 3px 0 0 0;
+          font-size: 11px;
+          color: #475569;
+          font-weight: 600;
+        }
+        .meta {
+          text-align: right;
+          font-size: 10px;
+          color: #475569;
+        }
+        .meta strong {
+          color: #0f172a;
+        }
+        .section {
+          margin-bottom: 18px;
+          page-break-inside: avoid;
+        }
+        .section-allow-break {
+          margin-bottom: 18px;
+        }
+        .section-title {
+          font-size: 13px;
+          font-weight: 800;
+          color: #1e3a8a;
+          background: #eff6ff;
+          border-left: 4px solid #2563eb;
+          padding: 6px 10px;
+          margin: 0 0 10px 0;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+        .kpi-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .kpi-card {
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 10px 12px;
+          background: #f8fafc;
+        }
+        .kpi-label {
+          font-size: 9px;
+          font-weight: 700;
+          color: #475569;
+          text-transform: uppercase;
+        }
+        .kpi-value {
+          font-size: 16px;
+          font-weight: 900;
+          color: #0f172a;
+          margin-top: 3px;
+        }
+        .kpi-sub {
+          font-size: 9px;
+          color: #64748b;
+          margin-top: 2px;
+        }
+        .indicators-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          border-radius: 6px;
+          padding: 7px 12px;
+          font-size: 10px;
+          color: #334155;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 10.5px;
+        }
+        th {
+          background: #f1f5f9;
+          color: #334155;
+          font-weight: 800;
+          text-align: left;
+          padding: 7px 8px;
+          border-top: 1px solid #cbd5e1;
+          border-bottom: 1px solid #cbd5e1;
+          font-size: 9.5px;
+          text-transform: uppercase;
+        }
+        td {
+          padding: 6px 8px;
+          border-bottom: 1px solid #e2e8f0;
+          vertical-align: middle;
+        }
+        tr:nth-child(even) td {
+          background: #fafbfc;
+        }
+        tfoot td {
+          background: #f1f5f9 !important;
+          font-weight: 800;
+          border-top: 1.5px solid #94a3b8;
+          border-bottom: 1.5px solid #94a3b8;
+        }
+        .footer {
+          margin-top: 20px;
+          padding-top: 8px;
+          border-top: 1px solid #cbd5e1;
+          display: flex;
+          justify-content: space-between;
+          font-size: 9px;
+          color: #64748b;
+        }
+      </style>
+    </head>
+    <body>
+      <!-- ENCABEZADO -->
+      <div class="header">
+        <div class="brand">
+          <h1>Rendix<span>App</span></h1>
+          <p>Informe Ejecutivo de Gestión Vehicular, Normativa y Costos Operativos</p>
         </div>
-      `;
-    })
-    .join('');
-
-  let expensesRowsHtml = expenses
-    .map((exp) => {
-      const vId = exp.vehicle_id || exp.vehicleId;
-      return `
-        <tr>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">${formatDateShort(exp.date)}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #0284c7;">${resolveVehicleLabel(vId)}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">
-            <span style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-              ${escapeHtml(exp.category || 'Otros')}
-            </span>
-          </td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #334155;">${escapeHtml(exp.description || '—')}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: #dc2626;">$${Number(exp.amount || 0).toLocaleString('es-CL')}</td>
-        </tr>
-      `;
-    })
-    .join('');
-
-  if (expenses.length === 0) {
-    expensesRowsHtml = `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #64748b;">No hay gastos operativos (TAG, peajes, mantenciones u otros) registrados.</td></tr>`;
-  }
-
-  // 4. HISTORIAL DETALLADO DE CARGAS DE COMBUSTIBLE
-  const fuelTypeLabels = {
-    '93': '93 Oct.',
-    '95': '95 Oct.',
-    '97': '97 Oct.',
-    diesel: 'Diésel',
-    kerosene: 'Kerosene'
-  };
-
-  let fuelRowsHtml = fuelRecords
-    .map((rec) => {
-      const vId = rec.vehicle_id || rec.vehicleId;
-      const liters = Number(rec.liters || 0);
-      const total = Number(rec.total || 0);
-      const pricePerLiter = liters > 0 && total > 0 ? Math.round(total / liters) : 0;
-      const odo = Number(rec.odometer || 0);
-      const fuelLabel = fuelTypeLabels[String(rec.fuel_type || '95')] || escapeHtml(rec.fuel_type || '95');
-
-      return `
-        <tr>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">${formatDateShort(rec.date)}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #0284c7;">${resolveVehicleLabel(vId)}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">${escapeHtml(rec.station || '—')}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">${fuelLabel}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">${liters.toFixed(1)} L</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #475569;">${pricePerLiter > 0 ? `$${pricePerLiter.toLocaleString('es-CL')}` : '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #64748b;">${odo > 0 ? `${odo.toLocaleString('es-CL')} km` : '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: #0f172a;">$${total.toLocaleString('es-CL')}</td>
-        </tr>
-      `;
-    })
-    .join('');
-
-  if (fuelRecords.length === 0) {
-    fuelRowsHtml = `<tr><td colspan="8" style="padding: 16px; text-align: center; color: #64748b;">No hay cargas de combustible registradas.</td></tr>`;
-  }
-
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    alert('Por favor permite las ventanas emergentes en tu navegador para generar el PDF.');
-    return;
-  }
-
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Reporte Ejecutivo Integral - Rendix</title>
-        <style>
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; padding: 28px; margin: 0; font-size: 12px; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #3b82f6; padding-bottom: 14px; margin-bottom: 20px; }
-          .title h1 { margin: 0; color: #0f172a; font-size: 21px; }
-          .title p { margin: 4px 0 0 0; color: #475569; font-size: 12px; }
-          .scope-pill { display: inline-block; margin-top: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-          .badge { background: #3b82f6; color: white; padding: 4px 10px; font-weight: bold; font-size: 10px; border-radius: 4px; display: inline-block; }
-          .section-title { font-size: 14px; font-weight: bold; color: #0f172a; margin-top: 22px; margin-bottom: 10px; border-left: 4px solid #3b82f6; padding-left: 8px; page-break-after: avoid; }
-          table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
-          thead { display: table-header-group; }
-          tr { page-break-inside: avoid; }
-          th { background: #f8fafc; color: #334155; text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; font-size: 11px; text-transform: uppercase; }
-          .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
-          .kpi-card { background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 12px; border-radius: 6px; page-break-inside: avoid; }
-          .kpi-label { font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase; }
-          .kpi-value { font-size: 17px; font-weight: bold; color: #0f172a; margin-top: 3px; }
-          .kpi-sub { font-size: 10px; color: #64748b; margin-top: 2px; }
-          .cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-          .footer { margin-top: 32px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 12px; }
-          @media print {
-            body { padding: 0; }
-            @page { margin: 14mm; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="title">
-            <h1>Rendix — Reporte Ejecutivo Integral de Flota</h1>
-            <p>Control Financiero, Operativo, Cargas de Combustible y Guantera Digital</p>
-            <div class="scope-pill">Alcance: ${scopeLabel}</div>
-          </div>
-          <div style="text-align: right;">
-            <span class="badge">DOCUMENTO OFICIAL</span>
-            <p style="margin: 5px 0 0 0; font-size: 11px; color: #64748b;">Emitido el: ${fechaActual}</p>
-          </div>
+        <div class="meta">
+          <div><strong>Alcance:</strong> ${scopeTitle}</div>
+          <div><strong>Fecha de emisión:</strong> ${escapeHtml(emissionDate)} • ${escapeHtml(emissionTime)}</div>
+          <div><strong>Plataforma:</strong> Rendix Cloud • Duoc UC</div>
         </div>
+      </div>
 
-        <div class="section-title">1. Resumen Financiero y Operativo Consolidado</div>
+      <!-- SECCIÓN 1: RESUMEN FINANCIERO E INDICADORES ECONÓMICOS -->
+      <div class="section">
+        <h2 class="section-title">1. Resumen Financiero Ejecutivo e Indexación (Findic API)</h2>
         <div class="kpi-grid">
           <div class="kpi-card">
-            <div class="kpi-label">Gasto Total Bencina</div>
-            <div class="kpi-value" style="color: #0284c7;">$${Number(totalFuelCost).toLocaleString('es-CL')}</div>
-            <div class="kpi-sub">${fuelRecords.length} carga(s) • ${totalLiters.toFixed(1)} litros</div>
+            <div class="kpi-label">Gasto Total Combustible (${fuelRecords.length} cargas)</div>
+            <div class="kpi-value" style="color:#0284c7;">${formatCurrency(totalFuelCost)}</div>
+            <div class="kpi-sub">${totalLiters.toFixed(1)} litros acumulados</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">Gastos Operativos (TAG/Otros)</div>
-            <div class="kpi-value" style="color: #dc2626;">$${Number(totalExpenses).toLocaleString('es-CL')}</div>
-            <div class="kpi-sub">${expenses.length} movimiento(s) registrado(s)</div>
+            <div class="kpi-label">Gastos Operativos (${expenses.length} mov.)</div>
+            <div class="kpi-value" style="color:#be123c;">${formatCurrency(totalExpenses)}</div>
+            <div class="kpi-sub">TAG, mantenciones, peajes y otros</div>
+          </div>
+          <div class="kpi-card" style="background:#eff6ff;border-color:#93c5fd;">
+            <div class="kpi-label">Gasto Total Consolidado</div>
+            <div class="kpi-value" style="color:#1d4ed8;">${formatCurrency(totalGeneral)}</div>
+            <div class="kpi-sub"><strong>${totalUF} UF</strong> • <strong>US$ ${totalUSD}</strong></div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">Gasto Consolidado Total</div>
-            <div class="kpi-value" style="color: #4f46e5;">$${Number(totalGeneral).toLocaleString('es-CL')}</div>
-            <div class="kpi-sub">${totalInUf} UF • US$${totalInUsd} (Findic API)</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Rendimiento Promedio</div>
-            <div class="kpi-value" style="color: #16a34a;">${escapeHtml(avgKm)} km/L</div>
-            <div class="kpi-sub">Basado en rendimiento manual</div>
+            <div class="kpi-label">Rendimiento Promedio Flota</div>
+            <div class="kpi-value" style="color:#15803d;">${escapeHtml(avgKm)} km/L</div>
+            <div class="kpi-sub">Configuración manual por vehículo</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Costo Real por Kilómetro</div>
-            <div class="kpi-value" style="color: #0891b2;">$${escapeHtml(costPerKm)} / km</div>
+            <div class="kpi-value" style="color:#0891b2;">$${escapeHtml(costPerKm)} / km</div>
             <div class="kpi-sub">Combustible + gastos operativos</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">Indicadores Referenciales</div>
-            <div class="kpi-value" style="font-size: 14px; color: #334155;">UF $${Number(indicators.uf).toLocaleString('es-CL', { minimumFractionDigits: 2 })}</div>
-            <div class="kpi-sub">Dólar $${Number(indicators.dolar).toLocaleString('es-CL', { minimumFractionDigits: 2 })}</div>
+            <div class="kpi-label">Unidades Evaluadas</div>
+            <div class="kpi-value">${vehicles.length}</div>
+            <div class="kpi-sub">${selectedVehicleObj ? 'Vista individual' : 'Consolidado de flota'}</div>
           </div>
         </div>
+        <div class="indicators-bar">
+          <span><strong>Referencia Económica del Día (Findic.cl):</strong></span>
+          <span>Valor UF: <strong>${ufRate > 0 ? `$${ufRate.toLocaleString('es-CL', { minimumFractionDigits: 2 })}` : 'No disponible'}</strong></span>
+          <span>Dólar Observado: <strong>${usdRate > 0 ? `$${usdRate.toLocaleString('es-CL', { minimumFractionDigits: 2 })}` : 'No disponible'}</strong></span>
+        </div>
+      </div>
 
-        <div class="section-title">2. Inventario de Vehículos, Rendimiento y Últimas Mantenciones</div>
+      <!-- SECCIÓN 2: INVENTARIO VEHICULAR -->
+      <div class="section">
+        <h2 class="section-title">2. Inventario Vehicular y Estado de Mantención</h2>
         <table>
           <thead>
             <tr>
-              <th>Vehículo</th>
-              <th>Marca y Modelo</th>
+              <th>Foto</th>
+              <th>Vehículo / Modelo</th>
               <th>Patente</th>
-              <th style="text-align: right;">Odómetro</th>
-              <th style="text-align: right;">Rendimiento</th>
+              <th style="text-align:right;">Odómetro</th>
+              <th style="text-align:right;">Rendimiento</th>
               <th>Última Mantención</th>
             </tr>
           </thead>
           <tbody>
-            ${vehiclesRowsHtml}
+            ${inventoryRowsHtml}
           </tbody>
         </table>
+      </div>
 
-        <div class="section-title">3. Estado de Guantera Digital (Documentación Legal)</div>
+      <!-- SECCIÓN 3: GUANTERA DIGITAL (5 DOCUMENTOS) -->
+      <div class="section">
+        <h2 class="section-title">3. Guantera Digital — Control de Vencimientos Legales (5 Documentos)</h2>
         <table>
+          <thead>
+            <tr>
+              <th>Vehículo</th>
+              <th>SOAP</th>
+              <th>Permiso Circulación</th>
+              <th>Revisión Técnica</th>
+              <th>Seguro Privado</th>
+              <th>Licencia Conducir</th>
+            </tr>
+          </thead>
           <tbody>
             ${documentsRowsHtml}
           </tbody>
         </table>
+      </div>
 
-        <div class="section-title">4. Detalle de Gastos Operativos (TAG, Peajes, Mantenciones y Otros)</div>
-        ${categoryBadgesHtml ? `<div class="cat-grid">${categoryBadgesHtml}</div>` : ''}
+      <!-- SECCIÓN 4: GASTOS OPERATIVOS (RESUMEN + DETALLE) -->
+      <div class="section-allow-break">
+        <h2 class="section-title">4. Gastos Operativos — Resumen por Categoría y Detalle</h2>
+        <table style="margin-bottom: 12px;">
+          <thead>
+            <tr>
+              <th>Categoría</th>
+              <th style="text-align:center;">Registros</th>
+              <th style="text-align:right;">Subtotal</th>
+              <th style="text-align:right;">Participación</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${categorySummaryRowsHtml}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>TOTAL GASTOS OPERATIVOS</td>
+              <td style="text-align:center;">${expenses.length}</td>
+              <td style="text-align:right;color:#be123c;">${formatCurrency(totalExpenses)}</td>
+              <td style="text-align:right;">100%</td>
+            </tr>
+          </tfoot>
+        </table>
+
         <table>
           <thead>
             <tr>
@@ -334,64 +530,71 @@ export const generatePdfReport = ({
               <th>Vehículo</th>
               <th>Categoría</th>
               <th>Descripción</th>
-              <th style="text-align: right;">Monto</th>
+              <th style="text-align:right;">Monto</th>
             </tr>
           </thead>
           <tbody>
-            ${expensesRowsHtml}
-            ${
-              expenses.length > 0
-                ? `<tr style="background: #f8fafc; font-weight: bold;">
-                    <td colspan="4" style="padding: 9px 10px; text-align: right; border-top: 2px solid #cbd5e1;">TOTAL GASTOS OPERATIVOS:</td>
-                    <td style="padding: 9px 10px; text-align: right; color: #dc2626; border-top: 2px solid #cbd5e1;">$${Number(totalExpenses).toLocaleString('es-CL')}</td>
-                  </tr>`
-                : ''
-            }
+            ${expenseRowsHtml}
           </tbody>
         </table>
+      </div>
 
-        <div class="section-title">5. Historial Detallado de Cargas de Combustible</div>
+      <!-- SECCIÓN 5: HISTORIAL DE COMBUSTIBLE -->
+      <div class="section-allow-break">
+        <h2 class="section-title">5. Historial Completo de Cargas de Combustible</h2>
         <table>
           <thead>
             <tr>
               <th>Fecha</th>
               <th>Vehículo</th>
+              <th>Combustible</th>
               <th>Estación</th>
-              <th>Tipo</th>
-              <th style="text-align: right;">Litros</th>
-              <th style="text-align: right;">Valor/L</th>
-              <th style="text-align: right;">Odómetro</th>
-              <th style="text-align: right;">Total Pagado</th>
+              <th style="text-align:right;">Odómetro</th>
+              <th style="text-align:right;">Litros</th>
+              <th style="text-align:right;">Precio/L</th>
+              <th style="text-align:right;">Total</th>
             </tr>
           </thead>
           <tbody>
             ${fuelRowsHtml}
-            ${
-              fuelRecords.length > 0
-                ? `<tr style="background: #f8fafc; font-weight: bold;">
-                    <td colspan="4" style="padding: 9px 10px; text-align: right; border-top: 2px solid #cbd5e1;">TOTALES COMBUSTIBLE:</td>
-                    <td style="padding: 9px 10px; text-align: right; border-top: 2px solid #cbd5e1;">${totalLiters.toFixed(1)} L</td>
-                    <td colspan="2" style="border-top: 2px solid #cbd5e1;"></td>
-                    <td style="padding: 9px 10px; text-align: right; color: #0284c7; border-top: 2px solid #cbd5e1;">$${Number(totalFuelCost).toLocaleString('es-CL')}</td>
-                  </tr>`
-                : ''
-            }
           </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="5">TOTAL COMBUSTIBLE (${fuelRecords.length} cargas)</td>
+              <td style="text-align:right;">${totalLiters.toFixed(2)} L</td>
+              <td></td>
+              <td style="text-align:right;color:#15803d;">${formatCurrency(totalFuelCost)}</td>
+            </tr>
+          </tfoot>
         </table>
+      </div>
 
-        <div class="footer">
-          Generado automáticamente por Rendix Cloud • ${new Date().getFullYear()}
-        </div>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 250);
-          };
-        </script>
-      </body>
+      <div class="footer">
+        <span>Documento generado automáticamente por RendixApp (Gestión Inteligente de Flotas).</span>
+        <span>Los vencimientos están calculados según fecha local (${escapeHtml(emissionDate)}).</span>
+      </div>
+    </body>
     </html>
-  `);
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Por favor permite las ventanas emergentes (pop-ups) en tu navegador para generar el reporte PDF.');
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(htmlContent);
   printWindow.document.close();
-};
+
+  let printed = false;
+  const triggerPrint = () => {
+    if (printed) return;
+    printed = true;
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  printWindow.onload = () => setTimeout(triggerPrint, 250);
+  setTimeout(triggerPrint, 900);
+}

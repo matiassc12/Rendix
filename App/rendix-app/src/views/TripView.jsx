@@ -14,7 +14,7 @@ import {
 
 export default function TripView({ vehicles = [] }) {
   const [selectedVehicleId, setSelectedVehicleId] = useState(vehicles[0]?.id || '');
-  const [customKmPerLiter, setCustomKmPerLiter] = useState('');
+  const [customKmPerLiter, setCustomKmPerLiter] = useState('11.5');
   const [fuelPrice, setFuelPrice] = useState(1320);
   const [tolls, setTolls] = useState('');
   const [maintenanceReserve, setMaintenanceReserve] = useState(45);
@@ -41,18 +41,23 @@ export default function TripView({ vehicles = [] }) {
   const skipDestSearchRef = useRef(false);
 
   useEffect(() => {
-    if (!selectedVehicleId && vehicles.length > 0) {
+    if (!vehicles.length) {
+      setSelectedVehicleId('');
+      return;
+    }
+    const exists = vehicles.some(v => v.id === selectedVehicleId);
+    if (!exists) {
       setSelectedVehicleId(vehicles[0].id);
     }
   }, [vehicles, selectedVehicleId]);
 
   const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) || vehicles[0];
 
-  // Sincronizar el rendimiento manual del vehículo seleccionado
+  // Sincroniza solo cuando cambia el vehículo o su rendimiento configurado
   useEffect(() => {
     const manualVal = getManualEfficiency(selectedVehicle);
-    setCustomKmPerLiter(manualVal > 0 ? manualVal : 11.5);
-  }, [selectedVehicle]);
+    setCustomKmPerLiter(manualVal > 0 ? String(manualVal) : '11.5');
+  }, [selectedVehicle?.id, selectedVehicle?.manual_efficiency]);
 
   const kmPerLiter = Number(customKmPerLiter) > 0 ? Number(customKmPerLiter) : 11.5;
 
@@ -307,9 +312,8 @@ export default function TripView({ vehicles = [] }) {
       </div>
 
       <div className="trip-grid">
-        {/* COLUMNA IZQUIERDA: BUSCADORES, MAPA Y DISTANCIA */}
         <div className="trip-map-card">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
@@ -401,12 +405,12 @@ export default function TripView({ vehicles = [] }) {
           <div className="distance-input-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
               <label>Distancia Ruta Real (KM):</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 step="0.1"
                 min="0"
                 placeholder="0.0"
-                value={distanceKm} 
+                value={distanceKm}
                 onChange={(e) => {
                   const val = e.target.value;
                   setDistanceKm(val === '' ? '' : Math.max(0, Number(val)));
@@ -431,16 +435,15 @@ export default function TripView({ vehicles = [] }) {
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: CONFIGURACIÓN Y RESULTADOS */}
         <div className="trip-sidebar-box">
           <div className="trip-form-section">
             <h3>Parámetros de Operación</h3>
-            
+
             <div className="trip-row-inputs">
               <div className="form-group">
                 <label>Vehículo de la Flota *</label>
-                <select 
-                  value={selectedVehicleId} 
+                <select
+                  value={selectedVehicleId}
                   onChange={(e) => setSelectedVehicleId(e.target.value)}
                   className="trip-select"
                 >
@@ -471,21 +474,22 @@ export default function TripView({ vehicles = [] }) {
             <div className="trip-row-inputs">
               <div className="form-group">
                 <label>Precio Bencina ($/L)</label>
-                <input 
-                  type="number" 
-                  value={fuelPrice} 
-                  onChange={(e) => setFuelPrice(Number(e.target.value))}
+                <input
+                  type="number"
+                  min="0"
+                  value={fuelPrice}
+                  onChange={(e) => setFuelPrice(Math.max(0, Number(e.target.value) || 0))}
                   className="trip-input"
                 />
               </div>
               <div className="form-group">
                 <label>Peajes / TAG ($)</label>
-                <input 
+                <input
                   type="number"
                   min="0"
                   placeholder="0"
-                  value={tolls} 
-                  onChange={(e) => setTolls(e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))}
+                  value={tolls}
+                  onChange={(e) => setTolls(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))}
                   className="trip-input"
                 />
               </div>
@@ -494,26 +498,27 @@ export default function TripView({ vehicles = [] }) {
             <div className="trip-row-inputs">
               <div className="form-group">
                 <label>Reserva Desgaste ($/km)</label>
-                <input 
-                  type="number" 
-                  value={maintenanceReserve} 
-                  onChange={(e) => setMaintenanceReserve(Number(e.target.value))}
+                <input
+                  type="number"
+                  min="0"
+                  value={maintenanceReserve}
+                  onChange={(e) => setMaintenanceReserve(Math.max(0, Number(e.target.value) || 0))}
                   className="trip-input"
                 />
               </div>
               <div className="form-group">
                 <label>Margen Ganancia (%)</label>
-                <input 
-                  type="number" 
-                  value={profitMargin} 
-                  onChange={(e) => setProfitMargin(Number(e.target.value))}
+                <input
+                  type="number"
+                  min="0"
+                  value={profitMargin}
+                  onChange={(e) => setProfitMargin(Math.max(0, Number(e.target.value) || 0))}
                   className="trip-input"
                 />
               </div>
             </div>
           </div>
 
-          {/* DESGLOSE DE COSTOS */}
           <div className="trip-results-card">
             <h3>Desglose Financiero</h3>
 

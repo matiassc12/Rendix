@@ -1,167 +1,175 @@
 /* ==========================================
 VARIABLES DE TEMA (CLARO Y OSCURO)
 ========================================== */
+
 :root[data-theme='dark'] {
---bg-primary: #0b1120;
---bg-secondary: #1e293b;
---bg-card: #1e293b;
---bg-card-inner: #0f172a;
---text-primary: #f8fafc;
---text-secondary: #94a3b8;
---border-color: #334155;
---sidebar-bg: #0f172a;
+  color-scheme: dark;
+  --bg-primary: #0b1120;
+  --bg-secondary: #1e293b;
+  --bg-card: #1e293b;
+  --bg-card-inner: #0f172a;
+  --bg-hover: rgba(51, 65, 85, 0.45);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --border-color: #334155;
+  --sidebar-bg: #0f172a;
+  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.35);
 }
 
 :root[data-theme='light'] {
---bg-primary: #f8fafc;
---bg-secondary: #ffffff;
---bg-card: #ffffff;
---bg-card-inner: #f1f5f9;
---text-primary: #0f172a;
---text-secondary: #64748b;
---border-color: #cbd5e1;
---sidebar-bg: #ffffff;
+  color-scheme: light;
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-inner: #f8fafc;
+  --bg-hover: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #cbd5e1;
+  --sidebar-bg: #ffffff;
+  --shadow-card: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
 }
 
 /* ==========================================
 RESET GLOBAL DE PANTALLA
 ========================================== */
 html, body, #root {
-margin: 0;
-padding: 0;
-width: 100%;
-min-height: 100vh;
-background-color: var(--bg-primary) !important;
-color: var(--text-primary);
-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-overflow-x: hidden;
-box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 *, *:before, *:after {
-box-sizing: inherit;
+  box-sizing: inherit;
 }
 
 /* ==========================================
 LAYOUT PRINCIPAL DE ESCRITORIO
 ========================================== */
 .app-container {
-display: flex;
-width: 100vw;
-min-height: 100vh;
-background-color: var(--bg-primary);
-position: relative;
-overflow-x: hidden;
+  display: flex;
+  width: 100vw;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  position: relative;
+  overflow-x: hidden;
 }
 
-/* Sidebar fijo para escritorio */
 .sidebar-container {
-width: 260px;
-height: 100vh;
-background-color: var(--sidebar-bg);
-border-right: 1px solid var(--border-color);
-display: flex;
-flex-direction: column;
-position: fixed;
-top: 0;
-left: 0;
-z-index: 100;
-box-sizing: border-box;
-transition: transform 0.3s ease-in-out;
+  width: 260px;
+  height: 100vh;
+  background-color: var(--sidebar-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  box-sizing: border-box;
+  transition: transform 0.3s ease-in-out;
 }
 
-/* Contenido principal en escritorio */
 .main-content {
-flex: 1;
-margin-left: 260px;
-width: calc(100vw - 260px);
-min-height: 100vh;
-padding: 30px;
-box-sizing: border-box;
-background-color: var(--bg-primary);
+  flex: 1;
+  margin-left: 260px;
+  width: calc(100vw - 260px);
+  min-height: 100vh;
+  padding: 30px;
+  box-sizing: border-box;
+  background-color: var(--bg-primary);
+}
+
+.view-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .mobile-topbar {
-display: none;
+  display: none;
 }
 
 .sidebar-overlay {
-display: none;
+  display: none;
 }
 
 /* ==========================================
 SCROLLBARS LIMPIOS
 ========================================== */
 ::-webkit-scrollbar {
-width: 6px;
-height: 6px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-background: var(--bg-primary);
+  background: var(--bg-primary);
 }
 ::-webkit-scrollbar-thumb {
-background: var(--border-color);
-border-radius: 3px;
+  background: var(--border-color);
+  border-radius: 3px;
 }
 
 /* ==========================================
 ADAPTACIÓN MÓVIL (<= 768px)
 ========================================== */
 @media (max-width: 768px) {
-.app-container {
-flex-direction: column;
-}
+  .app-container {
+    flex-direction: column;
+  }
 
-.mobile-topbar {
-display: flex;
-justify-content: space-between;
-align-items: center;
-background-color: var(--sidebar-bg);
-border-bottom: 1px solid var(--border-color);
-padding: 12px 16px;
-position: fixed;
-top: 0;
-left: 0;
-z-index: 104;
-width: 100%;
-box-sizing: border-box;
-}
+  .mobile-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--sidebar-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 16px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 104;
+    width: 100%;
+    box-sizing: border-box;
+  }
 
-/* El sidebar se oculta por completo fuera de la pantalla a la izquierda y arranca debajo de la barra */
-.sidebar-container {
-transform: translateX(-100%);
-width: 280px;
-height: calc(100vh - 55px);
-top: 55px;
-box-shadow: 5px 0 25px rgba(0, 0, 0, 0.5);
-z-index: 103;
-}
+  .sidebar-container {
+    transform: translateX(-100%);
+    width: 280px;
+    height: calc(100vh - 55px);
+    top: 55px;
+    box-shadow: 5px 0 25px rgba(0, 0, 0, 0.35);
+    z-index: 103;
+  }
 
-/* Se desliza hacia la pantalla cuando se abre */
-.sidebar-container.open {
-transform: translateX(0);
-}
+  .sidebar-container.open {
+    transform: translateX(0);
+  }
 
-/* Muestra el fondo oscuro al abrir el menú móvil por debajo de la barra superior */
-.sidebar-overlay.open {
-display: block;
-position: fixed;
-top: 55px;
-left: 0;
-width: 100vw;
-height: calc(100vh - 55px);
-background: rgba(15, 23, 42, 0.6);
-backdrop-filter: blur(4px);
-z-index: 102;
-}
+  .sidebar-overlay.open {
+    display: block;
+    position: fixed;
+    top: 55px;
+    left: 0;
+    width: 100vw;
+    height: calc(100vh - 55px);
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 102;
+  }
 
-/* Ocupa el 100% del ancho, elimina el margen izquierdo y añade espacio superior para la topbar fija */
-.main-content {
-margin-left: 0 !important;
-width: 100% !important;
-padding: 16px !important;
-padding-top: 75px !important;
-}
+  .main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding: 16px !important;
+    padding-top: 75px !important;
+  }
 }
 
 /* --- ESTILOS COTIZADOR DE FLETES (TRIP VIEW) --- */
@@ -203,6 +211,7 @@ padding-top: 75px !important;
   flex-direction: column;
   gap: 16px;
   box-sizing: border-box;
+  box-shadow: var(--shadow-card);
 }
 
 .map-controls-bar {
@@ -213,13 +222,17 @@ padding-top: 75px !important;
 }
 
 .click-instruction {
-  background: rgba(59, 130, 246, 0.1);
-  color: #38bdf8;
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 800;
   border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+:root[data-theme='dark'] .click-instruction {
+  color: #38bdf8;
 }
 
 .btn-reset-points {
@@ -341,23 +354,26 @@ padding-top: 75px !important;
 }
 
 .result-suggested-box {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
   padding: 14px;
   border-radius: 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #22c55e;
+  color: #16a34a;
   font-weight: 900;
   font-size: 14px;
+}
+
+:root[data-theme='dark'] .result-suggested-box {
+  color: #22c55e;
 }
 
 .suggested-amount {
   font-size: 22px;
 }
 
-/* --- RESPONSIVO PARA MÓVILES --- */
 @media (max-width: 900px) {
   .trip-grid {
     grid-template-columns: 1fr;
@@ -365,4 +381,43 @@ padding-top: 75px !important;
   .leaflet-map-box {
     height: 300px;
   }
+}
+/* Soporte de tema claro y oscuro en vistas y cotizador de viajes */
+.trip-map-card,
+.trip-sidebar-box,
+.trip-results-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.trip-header h2,
+.trip-form-section h3,
+.trip-results-card h3 {
+  color: var(--text-primary);
+}
+
+.trip-header p,
+.form-group label {
+  color: var(--text-secondary);
+}
+
+.trip-input,
+.trip-select,
+.trip-input-highlight {
+  background: var(--bg-card-inner);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.map-controls-bar,
+.distance-input-box {
+  background: var(--bg-card-inner);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.result-row {
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
 }

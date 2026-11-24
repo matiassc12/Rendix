@@ -1,116 +1,166 @@
 /*
   Nombre del archivo: DocumentsView.jsx
-  Propósito: Billetera Digital de documentos de la flota con persistencia y eliminación de archivos en Supabase.
+  Propósito: Billetera Digital de documentos de la flota con persistencia y limpieza de archivos en Supabase Storage.
 */
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { getDaysUntilExpiration } from '../utils/dateHelper';
 
-export default function DocumentsView({ vehicles, onSaveDocuments }) {
+function extractStoragePathFromPublicUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const marker = '/object/public/vehicle-docs/';
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return decodeURIComponent(url.slice(idx + marker.length).split('?')[0]);
+}
+
+export default function DocumentsView({ vehicles = [], onSaveDocuments, showToast }) {
   const [selectedVehicleId, setSelectedVehicleId] = useState(vehicles[0]?.id || '');
+
+  useEffect(() => {
+    if (!vehicles.length) {
+      setSelectedVehicleId('');
+      return;
+    }
+    const exists = vehicles.some(v => v.id === selectedVehicleId);
+    if (!exists) {
+      setSelectedVehicleId(vehicles[0].id);
+    }
+  }, [vehicles, selectedVehicleId]);
+
   const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) || vehicles[0];
 
   const [formData, setFormData] = useState({
-    soap_expiration: selectedVehicle?.soap_expiration || '',
-    permiso_circulacion_expiration: selectedVehicle?.permiso_circulacion_expiration || '',
-    revision_tecnica_expiration: selectedVehicle?.revision_tecnica_expiration || '',
-    seguro_privado_expiration: selectedVehicle?.seguro_privado_expiration || '',
-    licencia_conducir_expiration: selectedVehicle?.licencia_conducir_expiration || '',
-    
-    soap_file: selectedVehicle?.soap_file || '',
-    permiso_file: selectedVehicle?.permiso_file || '',
-    revision_file: selectedVehicle?.revision_file || '',
-    seguro_file: selectedVehicle?.seguro_file || '',
-    licencia_file: selectedVehicle?.licencia_file || ''
+    soap_expiration: '',
+    permiso_circulacion_expiration: '',
+    revision_tecnica_expiration: '',
+    seguro_privado_expiration: '',
+    licencia_conducir_expiration: '',
+    soap_file: '',
+    permiso_file: '',
+    revision_file: '',
+    seguro_file: '',
+    licencia_file: ''
   });
 
   const [uploadingField, setUploadingField] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  // Sincronizar el estado del formulario cuando cambia el vehículo seleccionado
+  // Solo sincroniza al cambiar de vehículo seleccionado
   useEffect(() => {
-    if (selectedVehicle) {
-      setFormData({
-        soap_expiration: selectedVehicle.soap_expiration || '',
-        permiso_circulacion_expiration: selectedVehicle.permiso_circulacion_expiration || '',
-        revision_tecnica_expiration: selectedVehicle.revision_tecnica_expiration || '',
-        seguro_privado_expiration: selectedVehicle.seguro_privado_expiration || '',
-        licencia_conducir_expiration: selectedVehicle.licencia_conducir_expiration || '',
-        
-        soap_file: selectedVehicle?.soap_file || '',
-        permiso_file: selectedVehicle?.permiso_file || '',
-        revision_file: selectedVehicle?.revision_file || '',
-        seguro_file: selectedVehicle?.seguro_file || '',
-        licencia_file: selectedVehicle?.licencia_file || ''
-      });
-    }
-  }, [selectedVehicleId, vehicles]);
+    if (!selectedVehicle) return;
+    setFormData({
+      soap_expiration: selectedVehicle.soap_expiration || '',
+      permiso_circulacion_expiration: selectedVehicle.permiso_circulacion_expiration || '',
+      revision_tecnica_expiration: selectedVehicle.revision_tecnica_expiration || '',
+      seguro_privado_expiration: selectedVehicle.seguro_privado_expiration || '',
+      licencia_conducir_expiration: selectedVehicle.licencia_conducir_expiration || '',
+      soap_file: selectedVehicle.soap_file || '',
+      permiso_file: selectedVehicle.permiso_file || '',
+      revision_file: selectedVehicle.revision_file || '',
+      seguro_file: selectedVehicle.seguro_file || '',
+      licencia_file: selectedVehicle.licencia_file || ''
+    });
+  }, [selectedVehicle?.id]);
+
+  const notify = (msg) => {
+    if (showToast) showToast(msg);
+    else alert(msg);
+  };
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const handleFileUpload = async (fileKey, e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selectedVehicle) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      notify('⚠️ El archivo supera el límite máximo de 10 MB.');
+      return;
+    }
 
     setUploadingField(fileKey);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${selectedVehicle.id}_${fileKey}_${Date.now()}.${fileExt}`;
+      const rawExt = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'bin';
+      const safeExt = rawExt.replace(/[^a-z0-9]/g, '') || 'bin';
+      const fileName = `${selectedVehicle.id}_${fileKey}_${Date.now()}.${safeExt}`;
       const filePath = `documents/${fileName}`;
 
-      // Subir a Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('vehicle-docs')
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
       if (uploadError) {
         console.error('Error al subir documento:', uploadError);
-        alert(`Error al subir: ${uploadError.message}`);
-      } else {
-        const { data: { publicUrl } } = supabase.storage
-          .from('vehicle-docs')
-          .getPublicUrl(filePath);
-
-        // Actualizar el estado con la URL pública generada
-        setFormData(prev => ({ ...prev, [fileKey]: publicUrl }));
-        alert(`✨ Archivo adjuntado correctamente.`);
+        notify(`❌ Error al subir: ${uploadError.message}`);
+        return;
       }
+
+      const { data: urlData } = supabase.storage
+        .from('vehicle-docs')
+        .getPublicUrl(filePath);
+
+      const publicUrl = urlData?.publicUrl || '';
+      setFormData(prev => ({ ...prev, [fileKey]: publicUrl }));
+      notify('✨ Archivo adjuntado. Presiona "Guardar Billetera Digital" para confirmar.');
     } catch (err) {
       console.error('Excepción al subir archivo:', err);
+      notify('❌ Ocurrió un error inesperado al subir el archivo.');
     } finally {
       setUploadingField(null);
     }
   };
 
-  // NUEVA FUNCIÓN: Eliminar documento del estado
-  const handleRemoveFile = (fileKey) => {
-    if (window.confirm('¿Deseas quitar este documento? Recuerda presionar "Guardar Billetera Digital" para confirmar el cambio.')) {
-      setFormData(prev => ({ ...prev, [fileKey]: '' }));
+  const handleRemoveFile = async (fileKey) => {
+    if (!window.confirm('¿Deseas quitar este documento?')) return;
+
+    const currentUrl = formData[fileKey];
+    const storagePath = extractStoragePathFromPublicUrl(currentUrl);
+
+    if (storagePath) {
+      const { error: removeErr } = await supabase.storage
+        .from('vehicle-docs')
+        .remove([storagePath]);
+      if (removeErr) {
+        console.warn('No se pudo eliminar archivo del storage:', removeErr.message);
+      }
     }
+
+    setFormData(prev => ({ ...prev, [fileKey]: '' }));
+    notify('🗑️ Documento quitado. Guarda los cambios para actualizar la ficha.');
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    if (!selectedVehicle) return;
+    if (!selectedVehicle || !onSaveDocuments) return;
 
-    // Convertir campos vacíos a null para evitar errores en Supabase
-    const cleanedData = {
-      soap_expiration: formData.soap_expiration || null,
-      permiso_circulacion_expiration: formData.permiso_circulacion_expiration || null,
-      revision_tecnica_expiration: formData.revision_tecnica_expiration || null,
-      seguro_privado_expiration: formData.seguro_privado_expiration || null,
-      licencia_conducir_expiration: formData.licencia_conducir_expiration || null,
-      
-      soap_file: formData.soap_file || null,
-      permiso_file: formData.permiso_file || null,
-      revision_file: formData.revision_file || null,
-      seguro_file: formData.seguro_file || null,
-      licencia_file: formData.licencia_file || null
-    };
+    setSaving(true);
+    try {
+      const cleanedData = {
+        soap_expiration: formData.soap_expiration || null,
+        permiso_circulacion_expiration: formData.permiso_circulacion_expiration || null,
+        revision_tecnica_expiration: formData.revision_tecnica_expiration || null,
+        seguro_privado_expiration: formData.seguro_privado_expiration || null,
+        licencia_conducir_expiration: formData.licencia_conducir_expiration || null,
+        soap_file: formData.soap_file || null,
+        permiso_file: formData.permiso_file || null,
+        revision_file: formData.revision_file || null,
+        seguro_file: formData.seguro_file || null,
+        licencia_file: formData.licencia_file || null
+      };
 
-    onSaveDocuments(selectedVehicle.id, cleanedData);
+      await onSaveDocuments(selectedVehicle.id, cleanedData);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!vehicles || vehicles.length === 0) {
@@ -141,11 +191,12 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
         </p>
       </div>
 
-      {/* SELECTOR DE VEHÍCULO */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>Seleccionar Vehículo a Consultar:</label>
-        <select 
-          value={selectedVehicleId} 
+        <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+          Seleccionar Vehículo a Consultar:
+        </label>
+        <select
+          value={selectedVehicle?.id || ''}
           onChange={(e) => setSelectedVehicleId(e.target.value)}
           style={{ background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', fontWeight: '800' }}
         >
@@ -157,23 +208,23 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
         </select>
       </div>
 
-      {/* TARJETA DE VEHÍCULO DESTACADA */}
       {selectedVehicle && (
-        <div style={{ 
-          background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-inner) 100%)', 
-          border: '1px solid var(--border-color)', 
-          borderRadius: '16px', 
-          padding: '24px', 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '24px', 
+        <div style={{
+          background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-inner) 100%)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '16px',
+          padding: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '24px',
           flexWrap: 'wrap',
           boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)'
         }}>
           {selectedVehicle.image_url ? (
-            <img 
-              src={selectedVehicle.image_url} 
-              alt={selectedVehicle.name} 
+            <img
+              src={selectedVehicle.image_url}
+              alt={selectedVehicle.name}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
               style={{ width: '160px', height: '110px', objectFit: 'cover', borderRadius: '12px', border: '2px solid var(--border-color)', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}
             />
           ) : (
@@ -186,20 +237,27 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
             <span style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', border: '1px solid rgba(56, 189, 248, 0.3)', width: 'fit-content' }}>
               {selectedVehicle.brand || 'Vehículo'} {selectedVehicle.model || ''} ({selectedVehicle.year || '202X'})
             </span>
-            
+
             <h3 style={{ margin: 0, fontSize: '26px', fontWeight: '950', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
               {selectedVehicle.name}
             </h3>
-            
+
             <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '700', marginTop: '2px', flexWrap: 'wrap' }}>
-              <span>Patente: <strong style={{ color: 'var(--text-primary)', background: 'var(--bg-card)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>{selectedVehicle.plate || 'SIN PATENTE'}</strong></span>
-              <span>Kilometraje Actual: <strong style={{ color: '#38bdf8' }}>{Number(selectedVehicle.currentKm || 0).toLocaleString('es-CL')} km</strong></span>
+              <span>
+                Patente:{' '}
+                <strong style={{ color: 'var(--text-primary)', background: 'var(--bg-card)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                  {selectedVehicle.plate || 'SIN PATENTE'}
+                </strong>
+              </span>
+              <span>
+                Kilometraje Actual:{' '}
+                <strong style={{ color: '#38bdf8' }}>{Number(selectedVehicle.currentKm || 0).toLocaleString('es-CL')} km</strong>
+              </span>
             </div>
           </div>
         </div>
       )}
 
-      {/* FORMULARIO DE DOCUMENTOS Y ARCHIVOS */}
       <form onSubmit={handleSave} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: 'var(--text-primary)' }}>
           Documentos Guardados en la Billetera
@@ -209,7 +267,8 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
           {docFields.map(doc => {
             const dateVal = formData[doc.key] || '';
             const fileVal = formData[doc.fileKey] || '';
-            const isNear = dateVal && Math.ceil((new Date(dateVal) - new Date()) / (1000 * 60 * 60 * 24)) <= 30;
+            const diffDays = getDaysUntilExpiration(dateVal);
+            const isNear = diffDays !== null && diffDays <= 30;
 
             return (
               <div key={doc.key} style={{ background: 'var(--bg-card-inner)', border: `1px solid ${isNear ? '#ef4444' : 'var(--border-color)'}`, borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -219,15 +278,14 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
                   </span>
                   {isNear && (
                     <span style={{ background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: '900', padding: '2px 6px', borderRadius: '6px' }}>
-                      Por vencer
+                      {diffDays < 0 ? 'Vencido' : 'Por vencer'}
                     </span>
                   )}
                 </div>
 
-                {/* FECHA DE VENCIMIENTO */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '700' }}>Fecha de Vencimiento:</label>
-                  <input 
+                  <input
                     type="date"
                     value={dateVal}
                     onChange={(e) => handleChange(doc.key, e.target.value)}
@@ -235,23 +293,22 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
                   />
                 </div>
 
-                {/* VISUALIZAR, CAMBIAR Y ELIMINAR ARCHIVO */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
                   <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '700' }}>Documento en Billetera:</label>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
                     {fileVal ? (
-                      <a 
-                        href={fileVal.startsWith('http') ? fileVal : '#'} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        style={{ 
-                          background: 'rgba(56, 189, 248, 0.1)', 
-                          border: '1px solid rgba(56, 189, 248, 0.3)', 
-                          color: '#38bdf8', 
-                          padding: '6px 10px', 
-                          borderRadius: '8px', 
-                          fontSize: '12px', 
-                          fontWeight: '800', 
+                      <a
+                        href={fileVal}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          background: 'rgba(56, 189, 248, 0.1)',
+                          border: '1px solid rgba(56, 189, 248, 0.3)',
+                          color: '#38bdf8',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '800',
                           textDecoration: 'none',
                           display: 'flex',
                           alignItems: 'center',
@@ -263,7 +320,7 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
                         }}
                         title="Ver / Descargar documento"
                       >
-                        <span>📥</span> 
+                        <span>📥</span>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Ver Documento Adjunto</span>
                       </a>
                     ) : (
@@ -272,7 +329,6 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
                       </span>
                     )}
 
-                    {/* BOTONES DE ACCIÓN: Eliminar y Adjuntar/Cambiar */}
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       {fileVal && (
                         <button
@@ -284,18 +340,18 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
                           🗑️
                         </button>
                       )}
-                      
+
                       <label style={{ background: '#3b82f6', color: '#fff', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', margin: 0 }}>
                         {uploadingField === doc.fileKey ? 'Subiendo...' : (fileVal ? '🔄 Cambiar' : '📎 Adjuntar')}
-                        <input 
-                          type="file" 
-                          accept="image/*,.pdf" 
-                          onChange={(e) => handleFileUpload(doc.fileKey, e)} 
-                          style={{ display: 'none' }} 
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          disabled={uploadingField === doc.fileKey}
+                          onChange={(e) => handleFileUpload(doc.fileKey, e)}
+                          style={{ display: 'none' }}
                         />
                       </label>
                     </div>
-
                   </div>
                 </div>
               </div>
@@ -304,11 +360,23 @@ export default function DocumentsView({ vehicles, onSaveDocuments }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-          <button 
-            type="submit" 
-            style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', border: 'none', color: '#fff', padding: '12px 24px', borderRadius: '10px', fontWeight: '900', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.3)' }}
+          <button
+            type="submit"
+            disabled={saving || Boolean(uploadingField)}
+            style={{
+              background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+              border: 'none',
+              color: '#fff',
+              padding: '12px 24px',
+              borderRadius: '10px',
+              fontWeight: '900',
+              fontSize: '14px',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.7 : 1,
+              boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.3)'
+            }}
           >
-            💾 Guardar Billetera Digital
+            {saving ? 'Guardando...' : '💾 Guardar Billetera Digital'}
           </button>
         </div>
       </form>

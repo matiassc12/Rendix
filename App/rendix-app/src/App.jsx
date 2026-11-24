@@ -1,7 +1,7 @@
 /*
   Nombre del archivo: App.jsx
   Propósito: Componente principal de RendixApp con layout unificado, control de sesión,
-  rendimiento manual por vehículo y sincronización con Supabase + API CNE.
+  cierre de sesión y sincronización con Supabase + CNE.
 */
 
 import React, { useState, useEffect } from 'react';
@@ -12,6 +12,7 @@ import {
   calculateFleetAverageEfficiency,
   getManualEfficiency
 } from './utils/efficiencyHelper';
+import { getTodayLocalISO, getDaysUntilExpiration } from './utils/dateHelper';
 
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
@@ -32,26 +33,9 @@ import ExpenseModal from './modals/ExpenseModal';
 import ServiceModal from './modals/ServiceModal';
 import AnalyticsModal from './modals/AnalyticsModal';
 
-const getTodayLocalISO = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const getDaysUntilExpiration = (dateStr) => {
-  if (!dateStr) return null;
-  const [y, m, d] = dateStr.split('T')[0].split('-').map(Number);
-  if (!y || !m || !d) return null;
-  const expDate = new Date(y, m - 1, d);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-};
-
 export default function App() {
   const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [toasts, setToasts] = useState([]);
 
@@ -77,12 +61,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      setAuthReady(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
     });
 
     return () => subscription.unsubscribe();
@@ -110,7 +96,7 @@ export default function App() {
     ) {
       fetchCneStations(false);
     }
-  }, [session, activeTab]);
+  }, [session, activeTab, cneStations.length, isCneLoading]);
 
   const fetchUserVehicles = async () => {
     const { data, error } = await supabase
@@ -170,17 +156,6 @@ export default function App() {
   const fetchCneStations = async (forceRetry = false) => {
     setIsCneLoading(true);
     try {
-      if (cneStations.length === 0) {
-        const { data, error } = await supabase
-          .from('cne_stations')
-          .select('*')
-          .order('commune', { ascending: true });
-
-        if (!error && data && data.length > 0) {
-          setCneStations(data);
-        }
-      }
-
       const liveStations = await fetchRealCnePrices({
         regionFilter: 'Metropolitana',
         forceRetry
@@ -188,9 +163,9 @@ export default function App() {
 
       if (liveStations && liveStations.length > 0) {
         setCneStations(liveStations);
-        if (forceRetry) showToast('✅ Precios actualizados desde API CNE');
+        if (forceRetry) showToast('✅ Precios actualizados desde CNE');
       } else if (forceRetry) {
-        showToast('⚠️ API CNE temporalmente saturada; mostrando respaldo en nube');
+        showToast('⚠️ No se encontraron estaciones CNE disponibles');
       }
     } catch (err) {
       console.error('Error al obtener estaciones CNE:', err);
@@ -203,6 +178,17 @@ export default function App() {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      showToast('❌ No se pudo cerrar sesión');
+      return;
+    }
+    setSession(null);
+    setActiveTab('dashboard');
+    showToast('👋 Sesión cerrada correctamente');
   };
 
   const closeModal = () => setModalState({ type: null, data: null });
@@ -223,7 +209,10 @@ export default function App() {
       manual_efficiency:
         form.manual_efficiency && Number(form.manual_efficiency) > 0
           ? Number(form.manual_efficiency)
-          : null
+          : null,
+      ...(form.revision_tecnica_expiration !== undefined
+        ? { revision_tecnica_expiration: form.revision_tecnica_expiration || null }
+        : {})
     };
 
     const { error } = form.id
@@ -321,7 +310,6 @@ export default function App() {
       setFuelRecords(prev => [data[0], ...prev]);
     }
 
-    // Sincronizar current_km del vehículo si el odómetro registrado es mayor
     const targetVehicle = vehicles.find(v => v.id === vehicleId);
     if (odoVal && targetVehicle && odoVal > Number(targetVehicle.currentKm || 0)) {
       const { error: kmError } = await supabase
@@ -429,7 +417,6 @@ export default function App() {
       return;
     }
 
-    // Si el modal envía costo asociado, registrarlo también en gastos
     const serviceCost = Number(form.cost || form.amount || 0);
     if (serviceCost > 0) {
       const { data: expData } = await supabase
@@ -475,6 +462,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error al guardar Billetera:', err);
+      showToast('❌ Error inesperado al guardar la billetera');
     }
   };
 
@@ -528,7 +516,6 @@ export default function App() {
   const calculateCostPerKm = () => {
     if (!filteredFuels || filteredFuels.length === 0) return '0';
 
-    // 1. Estimar kilómetros recorridos usando (litros cargados * rendimiento manual km/L)
     let estimatedKm = 0;
     filteredFuels.forEach(r => {
       const vId = r.vehicle_id || r.vehicleId;
@@ -540,7 +527,6 @@ export default function App() {
       }
     });
 
-    // 2. Respaldo por diferencia de odómetro si no hay rendimiento manual configurado
     if (estimatedKm === 0) {
       const recordsByVehicle = {};
       filteredFuels.forEach(r => {
@@ -564,14 +550,21 @@ export default function App() {
     return Math.round(grandTotalCost / estimatedKm).toLocaleString('es-CL');
   };
 
+  if (!authReady) {
+    return null;
+  }
+
   if (!session) {
     return (
-      <Auth
-        onLoginSuccess={sess => {
-          setSession(sess);
-          showToast('🔐 ¡Bienvenido!');
-        }}
-      />
+      <>
+        <Toast toasts={toasts} />
+        <Auth
+          onLoginSuccess={sess => {
+            setSession(sess);
+            showToast('🔐 ¡Bienvenido!');
+          }}
+        />
+      </>
     );
   }
 
@@ -581,6 +574,7 @@ export default function App() {
 
       <div className="mobile-topbar">
         <button
+          type="button"
           onClick={() => setMobileMenuOpen(prev => !prev)}
           style={{
             background: 'transparent',
@@ -596,6 +590,7 @@ export default function App() {
           Rendix<span style={{ color: '#38bdf8' }}>App</span>
         </div>
         <button
+          type="button"
           onClick={toggleTheme}
           style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer' }}
         >
@@ -611,6 +606,8 @@ export default function App() {
         toggleTheme={toggleTheme}
         isOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
+        userEmail={session?.user?.email || ''}
+        onLogout={handleLogout}
       />
 
       <main className="main-content">
@@ -640,7 +637,11 @@ export default function App() {
           />
         )}
         {activeTab === 'documents' && (
-          <DocumentsView vehicles={vehicles} onSaveDocuments={handleSaveDocuments} />
+          <DocumentsView
+            vehicles={vehicles}
+            onSaveDocuments={handleSaveDocuments}
+            showToast={showToast}
+          />
         )}
         {activeTab === 'trip' && <TripView vehicles={vehicles} />}
         {activeTab === 'fuel' && (
